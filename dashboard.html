@@ -438,7 +438,10 @@
             </div>
             <div class="case-card-footer">
               <span class="follow-date ${overdue ? 'overdue' : ''}">次回: ${c.nextFollowDate ? fmtDate(c.nextFollowDate) : '-'} ${overdue ? '（期限切れ）' : ''}</span>
-              <span style="color:var(--accent);font-size:0.8rem;">詳細 →</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button class="btn-icon btn-danger" style="width:22px;height:22px;font-size:0.65rem;" onclick="event.stopPropagation();deleteCaseById('${c.id}','${c.name.replace(/'/g,'')}')">×</button>
+                <span style="color:var(--accent);font-size:0.8rem;">詳細 →</span>
+              </div>
             </div>
           </div>`;
       }).join('');
@@ -548,6 +551,12 @@
       if (!confirm('この案件を削除しますか？')) return;
       saveCases(getCases().filter(c => c.id !== id));
       closeModal('editCaseModal'); showToast('案件を削除しました'); renderDashboard();
+    }
+
+    function deleteCaseById(id, name) {
+      if (!confirm(`「${name}」を削除しますか？\nこの操作は取り消せません。`)) return;
+      saveCases(getCases().filter(c => c.id !== id));
+      showToast('案件を削除しました'); renderDashboard();
     }
 
     function showSettingsTab(tab, btn) {

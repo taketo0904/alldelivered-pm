@@ -574,7 +574,12 @@
         <div class="form-row"><div class="form-group"><label>コンサル費</label><input type="number" id="ciFee" value="${c.consultingFee}" min="0"></div><div class="form-group"><label>顧問料/月</label><input type="number" id="ciMonthly" value="${c.monthlyFee}" min="0"></div></div>
         <div class="form-row"><div class="form-group"><label>担当</label><select id="ciAssignee"><option value="admin" ${c.assignee==='admin'?'selected':''}>Taketo</option><option value="kanchan" ${c.assignee==='kanchan'?'selected':''}>Kanchan</option></select></div><div class="form-group"><label>次回フォロー</label><input type="date" id="ciFollow" value="${c.nextFollowDate || ''}"></div></div>
         <div class="form-group"><label>受注確度: <span id="ciProbVal">${c.probability}</span>%</label><input type="range" min="0" max="100" value="${c.probability}" id="ciProb" oninput="document.getElementById('ciProbVal').textContent=this.value"></div>
-        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+        <div class="form-actions"><button type="button" class="btn btn-danger" onclick="deleteCaseFromDetail()">案件削除</button><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function deleteCaseFromDetail() {
+      if (!confirm(`「${currentCase.name}」を削除しますか？\nこの操作は取り消せません。`)) return;
+      saveCases(getCases().filter(c => c.id !== currentCase.id));
+      window.location.href = 'dashboard.html';
     }
     function submitCaseInfo(e) { e.preventDefault(); currentCase.name = document.getElementById('ciName').value; currentCase.status = document.getElementById('ciStatus').value; currentCase.phase = document.getElementById('ciPhase').value; currentCase.startDate = document.getElementById('ciStart').value; currentCase.endDate = document.getElementById('ciEnd').value; currentCase.consultingFee = parseInt(document.getElementById('ciFee').value) || 0; currentCase.monthlyFee = parseInt(document.getElementById('ciMonthly').value) || 0; currentCase.assignee = document.getElementById('ciAssignee').value; currentCase.nextFollowDate = document.getElementById('ciFollow').value; currentCase.probability = parseInt(document.getElementById('ciProb').value); save(); closeModal('genericModal'); reload(); showToast('更新しました'); }
 
