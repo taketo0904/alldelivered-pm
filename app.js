@@ -354,7 +354,7 @@ async function slackSyncTasks() {
 
   for (const item of items) {
     const msg = item.message;
-    const hasPushpin = (msg.reactions || []).some(r => r.name === 'pushpin' && r.self);
+    const hasEyes = (msg.reactions || []).some(r => r.name === 'eyes' && r.self);
     if (!hasPushpin) continue;
 
     const text = slackStripMarkup(msg.text);
