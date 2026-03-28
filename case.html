@@ -52,6 +52,7 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             ${statusBadge(c.status)}
             ${canEdit ? '<button class="btn btn-sm" onclick="editCaseInfo()">編集</button>' : ''}
+            ${canEdit && c.status === 'proposal' ? '<button class="btn btn-sm" style="background:var(--accent);color:var(--bg);font-weight:600;border-color:var(--accent);" onclick="confirmContractFromDetail()">🎉 契約成立</button>' : ''}
             ${canEdit && c.status !== 'archived' ? '<button class="btn btn-sm" style="color:var(--text-sub);border-color:var(--border);" onclick="archiveCase()" title="アーカイブ">📦 アーカイブ</button>' : ''}
             ${canEdit && c.status === 'archived' ? '<button class="btn btn-sm" style="color:#6dbf7e;" onclick="unarchiveCase()" title="アーカイブ解除">↩ 復元</button>' : ''}
             <button class="btn btn-sm" onclick="generateProposal()" title="提案書を印刷/PDF保存">📄 提案書</button>
@@ -577,6 +578,12 @@
         <div class="form-row"><div class="form-group"><label>担当</label><select id="ciAssignee"><option value="admin" ${c.assignee==='admin'?'selected':''}>Taketo</option><option value="kanchan" ${c.assignee==='kanchan'?'selected':''}>Kanchan</option></select></div><div class="form-group"><label>次回フォロー</label><input type="date" id="ciFollow" value="${c.nextFollowDate || ''}"></div></div>
         <div class="form-group"><label>受注確度: <span id="ciProbVal">${c.probability}</span>%</label><input type="range" min="0" max="100" value="${c.probability}" id="ciProb" oninput="document.getElementById('ciProbVal').textContent=this.value"></div>
         <div class="form-actions"><button type="button" class="btn btn-danger" onclick="deleteCaseFromDetail()">案件削除</button><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function confirmContractFromDetail() {
+      if (!confirm(`「${currentCase.name}」の契約成立を確定しますか？\nステータス：提案中 → 進行中\nフェーズ：契約済`)) return;
+      currentCase.status = 'active';
+      currentCase.phase = '契約済';
+      save(); reload(); showToast('🎉 契約が成立しました！');
     }
     function archiveCase() {
       if (!confirm(`「${currentCase.name}」をアーカイブしますか？\nダッシュボードから非表示になります。`)) return;
