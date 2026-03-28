@@ -303,7 +303,7 @@
     function deleteMinute(minId) { if (!confirm('削除しますか？')) return; currentCase.minutes = currentCase.minutes.filter(m => m.id !== minId); save(); reload(); showToast('削除しました'); }
 
     // ===== RESOURCES =====
-    const RESOURCE_ICONS = { '契約書': '📄', 'Sheet': '📊', 'Figma': '🎨', 'Doc': '📝', 'PDF': '📋', 'Other': '🔗' };
+    const RESOURCE_ICONS = { '契約書': '📄', 'HP': '🌐', 'Sheet': '📊', 'Figma': '🎨', 'Doc': '📝', 'PDF': '📋', 'Other': '🔗' };
     function renderResourcesSection() {
       const res = currentCase.resources || [];
       // 契約書を先頭に並べる
@@ -321,7 +321,7 @@
       return `<div class="section"><div class="section-header"><h3>📁 資料格納</h3><span class="toggle-icon">▼</span></div><div class="section-body">
         ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addResource()">＋ 資料追加</button></div>' : ''}${html}</div></div>`;
     }
-    function addResource() { showGenericModal('資料追加', `<form onsubmit="submitResource(event)"><div class="form-group"><label>タイトル</label><input type="text" id="resTitle" required></div><div class="form-group"><label>URL</label><input type="url" id="resUrl" required></div><div class="form-group"><label>種別</label><select id="resType"><option>契約書</option><option>Sheet</option><option>Figma</option><option>Doc</option><option>PDF</option><option>Other</option></select></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`); }
+    function addResource() { showGenericModal('資料追加', `<form onsubmit="submitResource(event)"><div class="form-group"><label>タイトル</label><input type="text" id="resTitle" required></div><div class="form-group"><label>URL</label><input type="url" id="resUrl" required></div><div class="form-group"><label>種別</label><select id="resType"><option>契約書</option><option>HP</option><option>Sheet</option><option>Figma</option><option>Doc</option><option>PDF</option><option>Other</option></select></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`); }
     function submitResource(e) { e.preventDefault(); currentCase.resources.push({ id: generateId('res'), title: document.getElementById('resTitle').value, url: document.getElementById('resUrl').value, type: document.getElementById('resType').value }); save(); closeModal('genericModal'); reload(); showToast('追加しました'); }
     function deleteResource(resId) { if (!confirm('削除しますか？')) return; currentCase.resources = currentCase.resources.filter(r => r.id !== resId); save(); reload(); showToast('削除しました'); }
 
