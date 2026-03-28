@@ -55,6 +55,7 @@
       <div class="dash-tab-bar">
         <button id="tabCases" class="dash-tab active" onclick="switchDashTab('cases')">📋 案件一覧</button>
         <button id="tabPipeline" class="dash-tab" onclick="switchDashTab('pipeline')">🎯 提案パイプライン</button>
+        <button id="tabArchive" class="dash-tab" onclick="switchDashTab('archive')">📦 アーカイブ</button>
       </div>
 
       <!-- 案件一覧 -->
@@ -66,6 +67,11 @@
       <div id="panelPipeline" style="display:none;">
         <div id="pipelineSummary" style="margin-bottom:16px;"></div>
         <div class="pipeline-board" id="pipelineBoard"></div>
+      </div>
+
+      <!-- アーカイブ -->
+      <div id="panelArchive" style="display:none;">
+        <div id="archiveGrid" class="cases-grid"></div>
       </div>
 
       <div class="revenue-section">
@@ -250,27 +256,57 @@
 
     function switchDashTab(tab) {
       dashTab = tab;
-      document.getElementById('tabCases').classList.toggle('active', tab === 'cases');
-      document.getElementById('tabPipeline').classList.toggle('active', tab === 'pipeline');
-      document.getElementById('panelCases').style.display = tab === 'cases' ? '' : 'none';
-      document.getElementById('panelPipeline').style.display = tab === 'pipeline' ? '' : 'none';
+      ['cases','pipeline','archive'].forEach(t => {
+        document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1)).classList.toggle('active', tab === t);
+        document.getElementById('panel' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = tab === t ? '' : 'none';
+      });
       if (tab === 'pipeline') renderPipeline(getCases());
+      if (tab === 'archive') renderArchive(getCases());
     }
 
     function renderDashboard() {
       const cases = getCases();
+      const activeCases = cases.filter(c => c.status !== 'archived');
       const filteredCases = session.role === 'partner'
-        ? cases.filter(c => c.assignee === session.userId)
-        : cases;
-      renderSummary(cases);
+        ? activeCases.filter(c => c.assignee === session.userId)
+        : activeCases;
+      renderSummary(activeCases);
       renderReminders(filteredCases);
-      renderTimeline(cases);
+      renderTimeline(activeCases);
       renderTodayTasks(filteredCases);
       renderCaseCards(filteredCases.filter(c => c.status !== 'proposal'));
       if (dashTab === 'pipeline') renderPipeline(cases);
-      renderBillingTable(cases);
-      renderRevenueChart(cases);
+      if (dashTab === 'archive') renderArchive(cases);
+      renderBillingTable(activeCases);
+      renderRevenueChart(activeCases);
       populateClientSelect();
+    }
+
+    function renderArchive(allCases) {
+      const archived = allCases.filter(c => c.status === 'archived');
+      const grid = document.getElementById('archiveGrid');
+      if (archived.length === 0) {
+        grid.innerHTML = '<div class="empty-state">アーカイブされた案件はありません</div>';
+        return;
+      }
+      grid.innerHTML = archived.map(c => `
+        <div class="case-card" onclick="window.location.href='case.html?id=${c.id}'" style="opacity:0.7;">
+          <div class="case-card-header">
+            <div><div class="case-card-client">${c.clientName}</div><div class="case-card-name">${c.name}</div></div>
+            <span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text-sub);font-size:0.7rem;">📦 アーカイブ</span>
+          </div>
+          <div class="case-card-body">
+            <div class="case-card-row">
+              <span style="color:var(--text-sub);font-size:0.8rem;">フェーズ: ${c.phase}</span>
+              <span style="color:var(--text-sub);font-size:0.8rem;">担当: ${assigneeName(c.assignee)}</span>
+            </div>
+            ${c.consultingFee || c.monthlyFee ? `<div class="case-card-fee">${[c.consultingFee?'コンサル費 ¥'+fmt(c.consultingFee):'', c.monthlyFee?'顧問料 ¥'+fmt(c.monthlyFee)+'/月':''].filter(Boolean).join(' + ')}</div>` : ''}
+          </div>
+          <div class="case-card-footer">
+            <span style="color:var(--text-sub);font-size:0.75rem;">期間: ${fmtDate(c.startDate)} 〜 ${fmtDate(c.endDate)}</span>
+            <span style="color:var(--accent);font-size:0.8rem;">詳細 →</span>
+          </div>
+        </div>`).join('');
     }
 
     // ===== PIPELINE =====

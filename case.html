@@ -52,6 +52,8 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             ${statusBadge(c.status)}
             ${canEdit ? '<button class="btn btn-sm" onclick="editCaseInfo()">編集</button>' : ''}
+            ${canEdit && c.status !== 'archived' ? '<button class="btn btn-sm" style="color:var(--text-sub);border-color:var(--border);" onclick="archiveCase()" title="アーカイブ">📦 アーカイブ</button>' : ''}
+            ${canEdit && c.status === 'archived' ? '<button class="btn btn-sm" style="color:#6dbf7e;" onclick="unarchiveCase()" title="アーカイブ解除">↩ 復元</button>' : ''}
             <button class="btn btn-sm" onclick="generateProposal()" title="提案書を印刷/PDF保存">📄 提案書</button>
             <button class="btn btn-sm" onclick="generateMonthlyReport()" title="月次レポートを印刷/PDF保存">📊 月次レポート</button>
             <button class="btn btn-sm" onclick="generateInvoice()" title="請求書を印刷/PDF保存">🧾 請求書</button>
@@ -575,6 +577,15 @@
         <div class="form-row"><div class="form-group"><label>担当</label><select id="ciAssignee"><option value="admin" ${c.assignee==='admin'?'selected':''}>Taketo</option><option value="kanchan" ${c.assignee==='kanchan'?'selected':''}>Kanchan</option></select></div><div class="form-group"><label>次回フォロー</label><input type="date" id="ciFollow" value="${c.nextFollowDate || ''}"></div></div>
         <div class="form-group"><label>受注確度: <span id="ciProbVal">${c.probability}</span>%</label><input type="range" min="0" max="100" value="${c.probability}" id="ciProb" oninput="document.getElementById('ciProbVal').textContent=this.value"></div>
         <div class="form-actions"><button type="button" class="btn btn-danger" onclick="deleteCaseFromDetail()">案件削除</button><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function archiveCase() {
+      if (!confirm(`「${currentCase.name}」をアーカイブしますか？\nダッシュボードから非表示になります。`)) return;
+      currentCase.status = 'archived';
+      save(); reload(); showToast('アーカイブしました');
+    }
+    function unarchiveCase() {
+      currentCase.status = 'done';
+      save(); reload(); showToast('アーカイブを解除しました（完了に変更）');
     }
     function deleteCaseFromDetail() {
       if (!confirm(`「${currentCase.name}」を削除しますか？\nこの操作は取り消せません。`)) return;

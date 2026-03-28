@@ -147,7 +147,8 @@ function statusBadge(status) {
     'active': '<span class="badge badge-active">進行中</span>',
     'hold': '<span class="badge badge-hold">保留</span>',
     'done': '<span class="badge badge-done">完了</span>',
-    'proposal': '<span class="badge badge-proposal">提案中</span>'
+    'proposal': '<span class="badge badge-proposal">提案中</span>',
+    'archived': '<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text-sub);">📦 アーカイブ</span>'
   };
   return map[status] || status;
 }
