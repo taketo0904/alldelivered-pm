@@ -821,9 +821,18 @@
       if (!slackIsConnected()) { showToast('設定からSlackトークンを登録してください', 'error'); return; }
       showToast('Slack同期中…');
       try {
-        const count = await slackSyncTasks();
-        showToast(count > 0 ? count + '件のタスクを取り込みました' : '新しいタスクはありませんでした');
-        if (count > 0) renderDashboard();
+        const taskCount = await slackSyncTasks();
+        const minCount = await slackSyncMinutes();
+        const total = taskCount + minCount;
+        if (total > 0) {
+          const parts = [];
+          if (taskCount > 0) parts.push(taskCount + '件のタスク');
+          if (minCount > 0) parts.push(minCount + '件の議事録');
+          showToast(parts.join('・') + 'を取り込みました');
+          renderDashboard();
+        } else {
+          showToast('新しいタスク・議事録はありませんでした');
+        }
       } catch (e) {
         showToast('Slack同期エラー: ' + e.message, 'error');
       }
@@ -832,8 +841,16 @@
     async function autoSlackSync() {
       if (!slackIsConnected()) return;
       try {
-        const count = await slackSyncTasks();
-        if (count > 0) { showToast(count + '件のSlackタスクを自動取り込みしました'); renderDashboard(); }
+        const taskCount = await slackSyncTasks();
+        const minCount = await slackSyncMinutes();
+        const total = taskCount + minCount;
+        if (total > 0) {
+          const parts = [];
+          if (taskCount > 0) parts.push(taskCount + '件のタスク');
+          if (minCount > 0) parts.push(minCount + '件の議事録');
+          showToast('Slack自動同期: ' + parts.join('・') + 'を取り込みました');
+          renderDashboard();
+        }
       } catch (e) { /* サイレントに失敗 */ }
     }
 

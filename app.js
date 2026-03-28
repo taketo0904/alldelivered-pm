@@ -387,6 +387,46 @@ async function slackSyncTasks() {
   return imported;
 }
 
+async function slackSyncMinutes() {
+  const channelId = getData('ad_slack_minutes_channel') || 'C0AP9KKJBMZ';
+  const data = await slackApi('conversations.history', { channel: channelId, limit: 50 });
+  const messages = (data.messages || []).filter(m => !m.subtype && m.text);
+  const cases = getCases().filter(c => c.status !== 'archived');
+  let imported = 0;
+
+  for (const msg of messages) {
+    const text = slackStripMarkup(msg.text);
+    if (!text || text.length < 20) continue;
+
+    const matched = cases.find(c =>
+      text.toLowerCase().includes(c.clientName.toLowerCase()) ||
+      text.toLowerCase().includes(c.name.toLowerCase())
+    );
+    if (!matched) continue;
+
+    if (!matched.minutes) matched.minutes = [];
+    if (matched.minutes.some(m => m.slackTs === msg.ts)) continue;
+
+    const msgDate = new Date(parseFloat(msg.ts) * 1000);
+    const dateStr = msgDate.toISOString().slice(0, 10);
+    const lines = text.split('\n').filter(l => l.trim());
+    const title = (lines[0] || '').length > 60 ? lines[0].slice(0, 60) + '…' : (lines[0] || '議事録');
+    const body = lines.slice(1).join('\n').trim() || text;
+
+    matched.minutes.push({
+      id: generateId('min'),
+      date: dateStr,
+      title: '🎙️ ' + title,
+      body: body,
+      nextActions: [],
+      slackTs: msg.ts
+    });
+    updateCase(matched);
+    imported++;
+  }
+  return imported;
+}
+
 // ===== Google Calendar =====
 function gcalGetClientId() { return getData('ad_gcal_client_id') || ''; }
 function gcalSetClientId(id) { setData('ad_gcal_client_id', id); }
