@@ -32,13 +32,13 @@
   <script>
     const session = checkAuth(['admin', 'partner']);
     if (!session) throw new Error('No session');
-    initSidebar(session, caseId);
     const params = new URLSearchParams(window.location.search);
     const caseId = params.get('id');
     if (!caseId) { window.location.href = 'dashboard.html'; throw new Error('No case id'); }
     let currentCase = getCaseById(caseId);
     if (!currentCase) { window.location.href = 'dashboard.html'; throw new Error('Case not found'); }
     const canEdit = session.role === 'admin' || session.role === 'partner';
+    initSidebar(session, caseId);
 
     function reload() { currentCase = getCaseById(caseId); renderAll(); }
     function save() { updateCase(currentCase); }
