@@ -861,6 +861,27 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 .minute-collapsed .minute-body,
 .minute-collapsed .next-actions { display: none; }
 
+/* --- ROI --- */
+.roi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.roi-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.roi-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.roi-measure { font-size: 0.95rem; font-weight: 600; }
+.roi-metric-label { font-size: 0.75rem; color: var(--text-sub); margin-bottom: 12px; }
+.roi-values { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; background: var(--surface); border-radius: 6px; padding: 10px; }
+.roi-before, .roi-after { flex: 1; text-align: center; }
+.roi-val-label { font-size: 0.7rem; color: var(--text-sub); margin-bottom: 2px; }
+.roi-val { font-size: 1rem; font-weight: 600; font-family: var(--font-mono); }
+.roi-arrow { color: var(--text-sub); font-size: 1.1rem; }
+.roi-summary { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; }
+.roi-label { color: var(--text-sub); margin-right: 6px; }
+.roi-number { font-family: var(--font-mono); }
+.roi-number.positive { color: #6dbf7e; }
+.roi-number.negative { color: var(--error); }
+.roi-result { margin-top: 8px; font-size: 0.85rem; font-weight: 500; }
+.roi-big { font-size: 1.4rem; font-weight: 700; margin-left: 6px; }
+.roi-period { font-size: 0.75rem; color: var(--text-sub); margin-top: 8px; }
+.roi-notes { font-size: 0.8rem; color: var(--text-sub); margin-top: 4px; border-top: 1px solid var(--border); padding-top: 6px; }
+
 /* --- Resources --- */
 .resources-grid {
   display: grid;

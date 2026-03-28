@@ -62,7 +62,7 @@
     function renderSections() {
       document.getElementById('sectionsContainer').innerHTML =
         renderGanttSection() + renderTodaySection() + renderKPISection() +
-        renderFollowupSection() + renderSatisfactionSection() + renderMinutesSection() +
+        renderROISection() + renderFollowupSection() + renderSatisfactionSection() + renderMinutesSection() +
         renderResourcesSection() + (canEdit ? renderBillingSection() : '');
       renderSatChart();
     }
@@ -198,6 +198,105 @@
     }
     function submitEditKPI(e, kpiId) { e.preventDefault(); const k = currentCase.kpis.find(x => x.id === kpiId); if (!k) return; k.name = document.getElementById('kpiEditName').value; k.unit = document.getElementById('kpiEditUnit').value; k.target = parseFloat(document.getElementById('kpiEditTarget').value); k.actual = parseFloat(document.getElementById('kpiEditActual').value); k.prevActual = parseFloat(document.getElementById('kpiEditPrev').value); save(); closeModal('genericModal'); reload(); showToast('KPIを更新しました'); }
     function deleteKPI(kpiId) { if (!confirm('削除しますか？')) return; currentCase.kpis = currentCase.kpis.filter(k => k.id !== kpiId); save(); reload(); showToast('削除しました'); }
+
+    // ===== ROI =====
+    function calcROI(r) {
+      const effect = (r.afterValue - r.beforeValue) * (r.unitPrice || 1);
+      const invest = r.investmentAmount || 0;
+      const roi = invest > 0 ? ((effect - invest) / invest * 100) : null;
+      return { effect, roi };
+    }
+    function roiColor(roi) {
+      if (roi === null) return 'var(--text-sub)';
+      if (roi >= 100) return '#6dbf7e';
+      if (roi >= 0) return 'var(--accent)';
+      return 'var(--error)';
+    }
+    function renderROISection() {
+      const rois = currentCase.roi || [];
+      let html = '';
+      if (rois.length === 0) {
+        html = '<div class="empty-state">ROIデータがありません</div>';
+      } else {
+        html = '<div class="roi-grid">' + rois.map(r => {
+          const { effect, roi } = calcROI(r);
+          const roiStr = roi !== null ? (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%' : '-';
+          return `<div class="roi-card">
+            <div class="roi-card-header">
+              <div class="roi-measure">${r.measureName}</div>
+              ${canEdit ? `<button class="btn-icon btn-danger" style="width:20px;height:20px;font-size:0.65rem;" onclick="deleteROI('${r.id}')">×</button>` : ''}
+            </div>
+            <div class="roi-metric-label">${r.metric}</div>
+            <div class="roi-values">
+              <div class="roi-before"><div class="roi-val-label">改善前</div><div class="roi-val">${Number(r.beforeValue).toLocaleString()}</div></div>
+              <div class="roi-arrow">→</div>
+              <div class="roi-after"><div class="roi-val-label">改善後</div><div class="roi-val">${Number(r.afterValue).toLocaleString()}</div></div>
+            </div>
+            <div class="roi-summary">
+              <div><span class="roi-label">投資額</span><span class="roi-number mono">¥${Number(r.investmentAmount).toLocaleString()}</span></div>
+              <div><span class="roi-label">効果額</span><span class="roi-number mono${effect >= 0 ? ' positive' : ' negative'}">¥${effect.toLocaleString()}</span></div>
+              <div class="roi-result" style="color:${roiColor(roi)}">ROI <span class="roi-big">${roiStr}</span></div>
+            </div>
+            ${r.period ? `<div class="roi-period">📅 ${r.period}</div>` : ''}
+            ${r.notes ? `<div class="roi-notes">${r.notes}</div>` : ''}
+          </div>`;
+        }).join('') + '</div>';
+      }
+      return `<div class="section"><div class="section-header"><h3>📈 ROI計算</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addROI()">＋ ROI追加</button></div>' : ''}${html}</div></div>`;
+    }
+    function addROI() {
+      showGenericModal('ROI追加', `<form onsubmit="submitROI(event)">
+        <div class="form-group"><label>施策名</label><input type="text" id="roiMeasure" placeholder="例：ポスティング施策、ウェブサイト改善" required></div>
+        <div class="form-group"><label>投資額（円）</label><input type="number" id="roiInvest" value="0" min="0" required></div>
+        <div class="form-group"><label>測定指標</label><input type="text" id="roiMetric" placeholder="例：月次売上、新規顧客数、問い合わせ数" required></div>
+        <div class="form-row">
+          <div class="form-group"><label>改善前の値</label><input type="number" id="roiBefore" value="0" required></div>
+          <div class="form-group"><label>改善後の値</label><input type="number" id="roiAfter" value="0" required></div>
+        </div>
+        <div class="form-group"><label>単価換算（円/1単位）<span style="color:var(--text-sub);font-size:0.75rem;"> ※指標が金額の場合は1</span></label><input type="number" id="roiUnit" value="1" min="0" step="any"></div>
+        <div class="form-group"><label>測定期間（任意）</label><input type="text" id="roiPeriod" placeholder="例：2025年1月〜3月"></div>
+        <div class="form-group"><label>メモ（任意）</label><textarea id="roiNotes" rows="2"></textarea></div>
+        <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:0.8rem;color:var(--text-sub);margin-bottom:6px;">プレビュー</div>
+          <div id="roiPreview" style="font-size:0.9rem;"></div>
+        </div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div>
+      </form>`);
+      ['roiInvest','roiBefore','roiAfter','roiUnit'].forEach(id => {
+        document.getElementById(id).addEventListener('input', updateROIPreview);
+      });
+      updateROIPreview();
+    }
+    function updateROIPreview() {
+      const invest = parseFloat(document.getElementById('roiInvest').value) || 0;
+      const before = parseFloat(document.getElementById('roiBefore').value) || 0;
+      const after = parseFloat(document.getElementById('roiAfter').value) || 0;
+      const unit = parseFloat(document.getElementById('roiUnit').value) || 1;
+      const effect = (after - before) * unit;
+      const roi = invest > 0 ? ((effect - invest) / invest * 100) : null;
+      const roiStr = roi !== null ? (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%' : '-';
+      const color = roi === null ? 'var(--text-sub)' : roi >= 100 ? '#6dbf7e' : roi >= 0 ? 'var(--accent)' : 'var(--error)';
+      const el = document.getElementById('roiPreview');
+      if (el) el.innerHTML = `効果額: <span class="mono">¥${effect.toLocaleString()}</span> &nbsp; ROI: <span style="font-weight:700;color:${color}">${roiStr}</span>`;
+    }
+    function submitROI(e) {
+      e.preventDefault();
+      if (!currentCase.roi) currentCase.roi = [];
+      currentCase.roi.push({
+        id: generateId('roi'),
+        measureName: document.getElementById('roiMeasure').value,
+        investmentAmount: parseFloat(document.getElementById('roiInvest').value) || 0,
+        metric: document.getElementById('roiMetric').value,
+        beforeValue: parseFloat(document.getElementById('roiBefore').value) || 0,
+        afterValue: parseFloat(document.getElementById('roiAfter').value) || 0,
+        unitPrice: parseFloat(document.getElementById('roiUnit').value) || 1,
+        period: document.getElementById('roiPeriod').value,
+        notes: document.getElementById('roiNotes').value
+      });
+      save(); closeModal('genericModal'); reload(); showToast('ROIを追加しました');
+    }
+    function deleteROI(roiId) { if (!confirm('削除しますか？')) return; currentCase.roi = currentCase.roi.filter(r => r.id !== roiId); save(); reload(); showToast('削除しました'); }
 
     // ===== FOLLOWUP =====
     function renderFollowupSection() {
