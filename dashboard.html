@@ -27,7 +27,29 @@
         </div>
       </div>
 
+      <div id="reminderBanner"></div>
+
       <div class="summary-cards" id="summaryCards"></div>
+
+      <!-- 全案件タイムライン -->
+      <div class="section" style="margin-bottom:24px;">
+        <div class="section-header" onclick="toggleTimeline(this)">
+          <h3>📅 全案件タイムライン</h3><span class="toggle-icon">▼</span>
+        </div>
+        <div class="section-body" id="timelineBody">
+          <div id="timelineContent"></div>
+        </div>
+      </div>
+
+      <!-- 今日のタスク（全案件横断） -->
+      <div class="section" style="margin-bottom:24px;">
+        <div class="section-header" onclick="toggleSection(this,'todayTasksBody')">
+          <h3>✅ 今日のタスク（全案件）</h3><span class="toggle-icon">▼</span>
+        </div>
+        <div class="section-body" id="todayTasksBody">
+          <div id="todayTasksContent"></div>
+        </div>
+      </div>
 
       <h2 style="font-size:1rem;font-weight:500;margin-bottom:14px;">案件一覧</h2>
       <div class="cases-grid" id="casesGrid"></div>
@@ -118,6 +140,7 @@
       <div class="tab-bar">
         <button class="active" onclick="showSettingsTab('users', this)">ユーザー管理</button>
         <button onclick="showSettingsTab('data', this)">データ管理</button>
+        <button onclick="showSettingsTab('notify', this)">通知設定</button>
       </div>
       <div id="settingsTabUsers">
         <div id="usersList"></div>
@@ -141,6 +164,26 @@
               <input type="file" accept=".json" style="display:none;" onchange="handleImport(this)">
             </label>
           </div>
+        </div>
+      </div>
+      <div id="settingsTabNotify" style="display:none;">
+        <div class="form-group" style="margin-bottom:16px;">
+          <label>Slack Incoming Webhook URL</label>
+          <input type="url" id="slackWebhookUrl" placeholder="https://hooks.slack.com/services/..." style="font-size:0.8rem;">
+          <div style="font-size:0.75rem;color:var(--text-sub);margin-top:4px;">フォロー期限切れ・3日以内の案件を自動通知します</div>
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+          <label>通知タイミング</label>
+          <select id="slackNotifyDays">
+            <option value="1">1日前から</option>
+            <option value="3" selected>3日前から</option>
+            <option value="7">7日前から</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="saveNotifySettings()">保存</button>
+          <button class="btn btn-sm" onclick="testSlackNotify()">テスト送信</button>
+          <button class="btn btn-sm" onclick="requestBrowserNotify()">ブラウザ通知を許可</button>
         </div>
       </div>
     </div>
@@ -195,10 +238,110 @@
         ? cases.filter(c => c.assignee === session.userId)
         : cases;
       renderSummary(cases);
+      renderReminders(filteredCases);
+      renderTimeline(cases);
+      renderTodayTasks(filteredCases);
       renderCaseCards(filteredCases);
       renderBillingTable(cases);
       renderRevenueChart(cases);
       populateClientSelect();
+    }
+
+    // ===== REMINDERS =====
+    function renderReminders(cases) {
+      const today = todayStr();
+      const soon = new Date(); soon.setDate(soon.getDate() + 3);
+      const soonStr = soon.getFullYear() + '-' + String(soon.getMonth()+1).padStart(2,'0') + '-' + String(soon.getDate()).padStart(2,'0');
+      const overdue = cases.filter(c => c.nextFollowDate && c.nextFollowDate < today && c.status !== 'done');
+      const upcoming = cases.filter(c => c.nextFollowDate && c.nextFollowDate >= today && c.nextFollowDate <= soonStr && c.status !== 'done');
+      const banner = document.getElementById('reminderBanner');
+      if (overdue.length === 0 && upcoming.length === 0) { banner.innerHTML = ''; return; }
+      let html = '<div class="reminder-banner">';
+      if (overdue.length > 0) html += `<div class="reminder-overdue">⚠️ フォロー期限切れ: ${overdue.map(c=>`<a href="case.html?id=${c.id}" style="color:inherit;text-decoration:underline;">${c.clientName}</a>`).join('、')}</div>`;
+      if (upcoming.length > 0) html += `<div class="reminder-upcoming">🔔 3日以内にフォロー: ${upcoming.map(c=>`<a href="case.html?id=${c.id}" style="color:inherit;text-decoration:underline;">${c.clientName}（${c.nextFollowDate}）</a>`).join('、')}</div>`;
+      html += '</div>';
+      banner.innerHTML = html;
+      const notifyKey = 'ad_notified_' + todayStr();
+      if (!sessionStorage.getItem(notifyKey)) {
+        sessionStorage.setItem(notifyKey, '1');
+        // ブラウザ通知
+        if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+        if ('Notification' in window && Notification.permission === 'granted') {
+          if (overdue.length > 0) new Notification('AllDelivered PM — フォロー期限切れ', { body: overdue.map(c=>c.clientName).join('、') });
+          else if (upcoming.length > 0) new Notification('AllDelivered PM — フォロー予定', { body: upcoming.map(c=>c.clientName).join('、') });
+        }
+        // Slack通知
+        const notifySettings = getData('ad_notify') || {};
+        if (notifySettings.slackUrl) {
+          let msg = '*AllDelivered PM — フォローアップリマインダー*\n';
+          if (overdue.length > 0) msg += '⚠️ *期限切れ*: ' + overdue.map(c=>`${c.clientName}（${c.nextFollowDate}）`).join('、') + '\n';
+          if (upcoming.length > 0) msg += '🔔 *3日以内*: ' + upcoming.map(c=>`${c.clientName}（${c.nextFollowDate}）`).join('、');
+          sendSlackMessage(msg).catch(()=>{});
+        }
+      }
+    }
+
+    // ===== TIMELINE =====
+    function toggleTimeline(header) {
+      const body = document.getElementById('timelineBody');
+      const icon = header.querySelector('.toggle-icon');
+      const collapsed = body.style.display === 'none';
+      body.style.display = collapsed ? '' : 'none';
+      icon.textContent = collapsed ? '▼' : '▶';
+    }
+
+    function renderTimeline(cases) {
+      const active = cases.filter(c => c.status === 'active' || c.status === 'proposal');
+      const el = document.getElementById('timelineContent');
+      if (active.length === 0) { el.innerHTML = '<div class="empty-state">進行中の案件がありません</div>'; return; }
+      const allDates = active.flatMap(c => [c.startDate, c.endDate]).filter(Boolean);
+      if (allDates.length === 0) { el.innerHTML = '<div class="empty-state">期間が設定されていません</div>'; return; }
+      const minDate = allDates.reduce((a,b) => a < b ? a : b);
+      const maxDate = allDates.reduce((a,b) => a > b ? a : b);
+      const totalDays = Math.max(daysBetween(minDate, maxDate) + 1, 1);
+      const LABEL_W = 180;
+      const dayW = Math.max(4, Math.min(20, 700 / totalDays));
+      const timelineW = totalDays * dayW;
+      // month headers
+      let headerCells = '';
+      let cur = new Date(minDate); const endD = new Date(maxDate);
+      while (cur <= endD) {
+        const mEnd = new Date(cur.getFullYear(), cur.getMonth()+1, 0);
+        const visEnd = mEnd < endD ? mEnd : endD;
+        const days = daysBetween(cur.toISOString().slice(0,10), visEnd.toISOString().slice(0,10)) + 1;
+        headerCells += `<div class="gantt-header-cell" style="width:${days*dayW}px">${cur.getFullYear()}/${cur.getMonth()+1}</div>`;
+        cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
+      }
+      const todayOff = Math.max(0, dayOffset(minDate, todayStr()));
+      const STATUS_COLOR = { active: 'var(--accent)', proposal: '#6b9bd2', hold: 'var(--text-sub)', done: '#6dbf7e' };
+      const rows = active.map(c => {
+        const off = Math.max(0, dayOffset(minDate, c.startDate));
+        const dur = Math.max(1, daysBetween(c.startDate, c.endDate) + 1);
+        const color = STATUS_COLOR[c.status] || 'var(--accent)';
+        const latestSat = c.satisfaction && c.satisfaction.length > 0 ? c.satisfaction[c.satisfaction.length-1].total : null;
+        return `<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;min-height:36px;" onclick="window.location.href='case.html?id=${c.id}'" class="timeline-row">
+          <div style="min-width:${LABEL_W}px;padding:6px 8px;font-size:0.8rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">
+            <span style="color:var(--text-sub);font-size:0.7rem;">${c.clientName}</span><br>${c.name}
+            ${latestSat !== null ? `<span style="margin-left:6px;font-size:0.7rem;color:${satColor(latestSat)}">★${latestSat}</span>` : ''}
+          </div>
+          <div style="position:relative;width:${timelineW}px;height:36px;flex-shrink:0;">
+            <div style="position:absolute;left:${off*dayW}px;top:8px;width:${dur*dayW}px;height:20px;background:${color};border-radius:4px;opacity:0.85;"></div>
+            <div style="position:absolute;left:${todayOff*dayW}px;top:0;width:2px;height:100%;background:var(--error);opacity:0.7;"></div>
+          </div>
+        </div>`;
+      }).join('');
+      el.innerHTML = `<div style="overflow-x:auto;"><div style="min-width:${LABEL_W+timelineW}px;">
+        <div style="display:flex;border-bottom:1px solid var(--border);">
+          <div style="min-width:${LABEL_W}px;"></div>
+          <div class="gantt-header-row" style="width:${timelineW}px;">${headerCells}</div>
+        </div>
+        ${rows}
+        <div style="font-size:0.72rem;color:var(--text-sub);margin-top:6px;padding-left:${LABEL_W}px;">
+          <span style="display:inline-block;width:12px;height:8px;background:var(--accent);border-radius:2px;margin-right:4px;"></span>進行中
+          <span style="display:inline-block;width:12px;height:8px;background:#6b9bd2;border-radius:2px;margin:0 4px 0 12px;"></span>提案中
+          <span style="display:inline-block;width:2px;height:10px;background:var(--error);margin:0 4px 0 12px;vertical-align:middle;"></span>今日
+        </div>
+      </div></div>`;
     }
 
     function renderSummary(cases) {
@@ -220,6 +363,52 @@
         <div class="summary-card"><div class="card-label">平均顧客満足度</div><div class="card-value">${avgSat}<span style="font-size:0.9rem;color:var(--text-sub)">/100</span></div></div>
         <div class="summary-card"><div class="card-label">今週のフォロー</div><div class="card-value">${weeklyFU}</div><div class="card-sub">件</div></div>
       `;
+    }
+
+    function toggleSection(header, bodyId) {
+      const body = document.getElementById(bodyId);
+      const icon = header.querySelector('.toggle-icon');
+      const collapsed = body.style.display === 'none';
+      body.style.display = collapsed ? '' : 'none';
+      icon.textContent = collapsed ? '▼' : '▶';
+    }
+
+    // ===== TODAY TASKS (all cases) =====
+    function renderTodayTasks(cases) {
+      const today = todayStr();
+      const el = document.getElementById('todayTasksContent');
+      const rows = [];
+      cases.forEach(c => {
+        if (c.status === 'done') return;
+        const tasks = (c.gantt || []).filter(t =>
+          !t.done && t.startDate <= today && t.endDate >= today
+        );
+        tasks.forEach(t => rows.push({ caseId: c.id, caseName: c.name, clientName: c.clientName, task: t }));
+      });
+      if (rows.length === 0) {
+        el.innerHTML = '<div class="empty-state">今日のタスクはありません</div>';
+        return;
+      }
+      el.innerHTML = `<div class="today-tasks-list">${rows.map(r => `
+        <div class="today-task-row">
+          <input type="checkbox" ${r.task.done ? 'checked' : ''} onchange="toggleDashboardTask('${r.caseId}','${r.task.id}',this.checked)" style="margin-right:8px;cursor:pointer;">
+          <div class="today-task-info">
+            <span class="today-task-case"><a href="case.html?id=${r.caseId}" style="color:var(--text-sub);font-size:0.75rem;text-decoration:none;">${r.clientName} / ${r.caseName}</a></span>
+            <span class="today-task-name" style="${r.task.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''}">${r.task.name}</span>
+          </div>
+          ${priorityDot(r.task.priority)}
+          <span class="task-assignee">${assigneeName(r.task.assignee)}</span>
+          <span style="font-size:0.75rem;color:var(--text-sub);">${r.task.endDate}</span>
+        </div>`).join('')}
+      </div>`;
+    }
+
+    function toggleDashboardTask(caseId, taskId, checked) {
+      const cases = getCases();
+      const c = cases.find(x => x.id === caseId);
+      if (!c) return;
+      const t = (c.gantt || []).find(x => x.id === taskId);
+      if (t) { t.done = checked; saveCases(cases); renderDashboard(); }
     }
 
     function renderCaseCards(cases) {
@@ -366,7 +555,51 @@
       btn.classList.add('active');
       document.getElementById('settingsTabUsers').style.display = tab === 'users' ? 'block' : 'none';
       document.getElementById('settingsTabData').style.display = tab === 'data' ? 'block' : 'none';
+      document.getElementById('settingsTabNotify').style.display = tab === 'notify' ? 'block' : 'none';
       if (tab === 'users') renderUsersList();
+      if (tab === 'notify') loadNotifySettings();
+    }
+
+    // ===== NOTIFY SETTINGS =====
+    function loadNotifySettings() {
+      const s = getData('ad_notify') || {};
+      const urlEl = document.getElementById('slackWebhookUrl');
+      const daysEl = document.getElementById('slackNotifyDays');
+      if (urlEl) urlEl.value = s.slackUrl || '';
+      if (daysEl) daysEl.value = s.notifyDays || '3';
+    }
+
+    function saveNotifySettings() {
+      const url = document.getElementById('slackWebhookUrl').value.trim();
+      const days = document.getElementById('slackNotifyDays').value;
+      setData('ad_notify', { slackUrl: url, notifyDays: parseInt(days) });
+      showToast('通知設定を保存しました');
+    }
+
+    function requestBrowserNotify() {
+      if (!('Notification' in window)) { showToast('このブラウザはブラウザ通知に対応していません', 'error'); return; }
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') showToast('ブラウザ通知を許可しました');
+        else showToast('通知が拒否されました。ブラウザの設定から許可してください', 'error');
+      });
+    }
+
+    function sendSlackMessage(text) {
+      const s = getData('ad_notify') || {};
+      if (!s.slackUrl) return Promise.reject('No webhook URL');
+      return fetch(s.slackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+    }
+
+    function testSlackNotify() {
+      const s = getData('ad_notify') || {};
+      if (!s.slackUrl) { showToast('Webhook URLを入力して保存してください', 'error'); return; }
+      sendSlackMessage('✅ AllDelivered PM — テスト通知です。フォローアップリマインダーが正常に機能しています。')
+        .then(() => showToast('Slackにテスト送信しました'))
+        .catch(() => showToast('Slack送信に失敗しました。URLを確認してください', 'error'));
     }
 
     function renderUsersList() {

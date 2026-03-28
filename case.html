@@ -49,7 +49,13 @@
       document.getElementById('caseHeader').innerHTML = `
         <div class="case-header-top">
           <div><div class="case-client">${c.clientName}</div><div class="case-name">${c.name}</div></div>
-          <div style="display:flex;gap:8px;">${statusBadge(c.status)}${canEdit ? '<button class="btn btn-sm" onclick="editCaseInfo()">編集</button>' : ''}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${statusBadge(c.status)}
+            ${canEdit ? '<button class="btn btn-sm" onclick="editCaseInfo()">編集</button>' : ''}
+            <button class="btn btn-sm" onclick="generateProposal()" title="提案書を印刷/PDF保存">📄 提案書</button>
+            <button class="btn btn-sm" onclick="generateMonthlyReport()" title="月次レポートを印刷/PDF保存">📊 月次レポート</button>
+            <button class="btn btn-sm" onclick="generateInvoice()" title="請求書を印刷/PDF保存">🧾 請求書</button>
+          </div>
         </div>
         <div class="case-meta">
           <span>フェーズ: ${c.phase}</span><span>担当: ${assigneeName(c.assignee)}</span>
@@ -463,6 +469,187 @@
     function submitCaseInfo(e) { e.preventDefault(); currentCase.name = document.getElementById('ciName').value; currentCase.status = document.getElementById('ciStatus').value; currentCase.phase = document.getElementById('ciPhase').value; currentCase.startDate = document.getElementById('ciStart').value; currentCase.endDate = document.getElementById('ciEnd').value; currentCase.consultingFee = parseInt(document.getElementById('ciFee').value) || 0; currentCase.monthlyFee = parseInt(document.getElementById('ciMonthly').value) || 0; currentCase.assignee = document.getElementById('ciAssignee').value; currentCase.nextFollowDate = document.getElementById('ciFollow').value; currentCase.probability = parseInt(document.getElementById('ciProb').value); save(); closeModal('genericModal'); reload(); showToast('更新しました'); }
 
     function showGenericModal(title, bodyHtml) { document.getElementById('genericModalTitle').textContent = title; document.getElementById('genericModalBody').innerHTML = bodyHtml; openModal('genericModal'); }
+
+    // ===== PDF / PRINT DOCUMENTS =====
+    function openPrintDoc(title, bodyHtml) {
+      const w = window.open('', '_blank', 'width=900,height=700');
+      w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+        <title>${title}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Noto Sans JP', sans-serif; font-size: 13px; color: #1a1a1a; background: #fff; padding: 40px; }
+          h1 { font-size: 20px; margin-bottom: 4px; }
+          h2 { font-size: 14px; border-bottom: 2px solid #1a1a1a; padding-bottom: 4px; margin: 20px 0 10px; }
+          h3 { font-size: 13px; margin-bottom: 6px; color: #444; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; border-bottom: 3px solid #1a1a1a; padding-bottom: 12px; }
+          .company { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+          .doc-meta { text-align: right; font-size: 12px; color: #555; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 12px; }
+          th { background: #f5f5f5; padding: 6px 10px; text-align: left; border: 1px solid #ddd; font-weight: 500; }
+          td { padding: 6px 10px; border: 1px solid #ddd; }
+          .total-row td { font-weight: 700; background: #fafafa; }
+          .label { color: #777; font-size: 11px; margin-bottom: 2px; }
+          .value { font-weight: 500; margin-bottom: 10px; }
+          .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+          .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+          .kpi-card { border: 1px solid #ddd; border-radius: 4px; padding: 10px; }
+          .kpi-val { font-size: 18px; font-weight: 700; }
+          .sat-bar { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; }
+          .sat-fill { height: 100%; border-radius: 4px; }
+          .sign-box { border: 1px solid #ccc; border-radius: 4px; padding: 20px; text-align: center; color: #999; min-height: 60px; }
+          .footer { margin-top: 32px; border-top: 1px solid #ddd; padding-top: 12px; font-size: 11px; color: #999; text-align: center; }
+          .badge-ok { background: #e6f4ea; color: #1e7e34; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+          .badge-ng { background: #fdecea; color: #c62828; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+          @media print { body { padding: 20px; } }
+        </style>
+      </head><body>${bodyHtml}
+        <div class="footer">AllDelivered — Confidential</div>
+        <script>setTimeout(()=>window.print(),400);<\/script>
+      </body></html>`);
+      w.document.close();
+    }
+
+    // 請求書
+    function generateInvoice(billId) {
+      const c = currentCase;
+      const b = billId ? (c.billing || []).find(x => x.id === billId) : null;
+      const invoiceNo = 'INV-' + todayStr().replace(/-/g,'') + '-' + (c.id || '').slice(-4).toUpperCase();
+      const items = [];
+      if (b) {
+        if (b.consultingFee) items.push({ name: `コンサルティング費（${b.month}）`, amount: b.consultingFee });
+        if (b.monthlyFee) items.push({ name: `月次顧問料（${b.month}）`, amount: b.monthlyFee });
+      } else {
+        if (c.consultingFee) items.push({ name: 'コンサルティング費', amount: c.consultingFee });
+        if (c.monthlyFee) items.push({ name: `月次顧問料（${todayStr().slice(0,7)}）`, amount: c.monthlyFee });
+      }
+      const subtotal = items.reduce((s, i) => s + i.amount, 0);
+      const tax = Math.floor(subtotal * 0.1);
+      const total = subtotal + tax;
+      const dueDate = new Date(); dueDate.setDate(dueDate.getDate() + 30);
+      const dueDateStr = dueDate.toLocaleDateString('ja-JP');
+      openPrintDoc('請求書', `
+        <div class="header">
+          <div><div class="company">AllDelivered</div><div style="font-size:12px;color:#555;margin-top:4px;">コンサルティング・マーケティング支援</div></div>
+          <div class="doc-meta"><div style="font-size:18px;font-weight:700;">請求書</div><div>No. ${invoiceNo}</div><div>発行日: ${todayStr()}</div><div>支払期限: ${dueDateStr}</div></div>
+        </div>
+        <h2>請求先</h2>
+        <p style="font-size:16px;font-weight:700;margin-bottom:4px;">${c.clientName} 御中</p>
+        <p style="font-size:12px;color:#555;margin-bottom:20px;">案件: ${c.name}</p>
+        <h2>請求内容</h2>
+        <table><thead><tr><th>内容</th><th style="width:160px;text-align:right;">金額（税抜）</th></tr></thead><tbody>
+          ${items.map(i => `<tr><td>${i.name}</td><td style="text-align:right;">¥${Number(i.amount).toLocaleString()}</td></tr>`).join('')}
+          <tr><td style="text-align:right;color:#777;">消費税（10%）</td><td style="text-align:right;">¥${tax.toLocaleString()}</td></tr>
+          <tr class="total-row"><td style="text-align:right;">合計（税込）</td><td style="text-align:right;font-size:16px;">¥${total.toLocaleString()}</td></tr>
+        </tbody></table>
+        <h2>振込先</h2>
+        <div class="grid2">
+          <div><div class="label">銀行名</div><div class="value">（設定してください）</div></div>
+          <div><div class="label">口座番号</div><div class="value">（設定してください）</div></div>
+        </div>
+        <h2>備考</h2><p style="font-size:12px;color:#555;">ご不明な点がございましたらご連絡ください。</p>
+      `);
+    }
+
+    // 提案書
+    function generateProposal() {
+      const c = currentCase;
+      const today = new Date().toLocaleDateString('ja-JP');
+      const feeItems = [];
+      if (c.consultingFee) feeItems.push(`コンサルティング費: ¥${Number(c.consultingFee).toLocaleString()}（一括）`);
+      if (c.monthlyFee) feeItems.push(`月次顧問料: ¥${Number(c.monthlyFee).toLocaleString()} / 月`);
+      const latestKPIs = (c.kpis || []).slice(0,5);
+      openPrintDoc('提案書', `
+        <div class="header">
+          <div><div class="company">AllDelivered</div><div style="font-size:12px;color:#555;margin-top:4px;">コンサルティング・マーケティング支援</div></div>
+          <div class="doc-meta"><div style="font-size:18px;font-weight:700;">提案書</div><div>日付: ${today}</div><div>担当: ${assigneeName(c.assignee)}</div></div>
+        </div>
+        <h2>提案概要</h2>
+        <div class="grid2">
+          <div><div class="label">クライアント</div><div class="value">${c.clientName}</div></div>
+          <div><div class="label">案件名</div><div class="value">${c.name}</div></div>
+          <div><div class="label">支援期間</div><div class="value">${c.startDate} 〜 ${c.endDate}</div></div>
+          <div><div class="label">フェーズ</div><div class="value">${c.phase}</div></div>
+        </div>
+        <h2>課題・背景</h2>
+        <div style="border:1px solid #ddd;border-radius:4px;padding:16px;min-height:80px;color:#999;font-size:12px;">（ここに課題・背景を記入してください）</div>
+        <h2>提案内容</h2>
+        <div style="border:1px solid #ddd;border-radius:4px;padding:16px;min-height:100px;color:#999;font-size:12px;">（ここに具体的な施策・アプローチを記入してください）</div>
+        <h2>期待効果・KPI目標</h2>
+        ${latestKPIs.length > 0
+          ? `<table><thead><tr><th>指標</th><th>単位</th><th>目標値</th></tr></thead><tbody>${latestKPIs.map(k=>`<tr><td>${k.name}</td><td>${k.unit}</td><td>${k.target}</td></tr>`).join('')}</tbody></table>`
+          : '<div style="border:1px solid #ddd;border-radius:4px;padding:16px;min-height:60px;color:#999;font-size:12px;">（KPI目標を記入してください）</div>'
+        }
+        <h2>費用</h2>
+        <table><thead><tr><th>項目</th><th style="width:200px;text-align:right;">金額</th></tr></thead><tbody>
+          ${feeItems.map(f=>`<tr><td>${f}</td><td></td></tr>`).join('') || '<tr><td colspan="2" style="color:#999;">（費用を記入してください）</td></tr>'}
+        </tbody></table>
+        <h2>スケジュール（概要）</h2>
+        <div style="border:1px solid #ddd;border-radius:4px;padding:16px;min-height:60px;color:#999;font-size:12px;">（マイルストーンを記入してください）</div>
+        <h2>会社概要</h2>
+        <div class="grid2">
+          <div><div class="label">会社名</div><div class="value">AllDelivered</div></div>
+          <div><div class="label">担当者</div><div class="value">${assigneeName(c.assignee)}</div></div>
+        </div>
+        <div class="grid2" style="margin-top:32px;">
+          <div><div class="label">クライアント確認サイン</div><div class="sign-box">サイン</div></div>
+          <div><div class="label">AllDelivered担当</div><div class="sign-box">サイン</div></div>
+        </div>
+      `);
+    }
+
+    // 月次レポート
+    function generateMonthlyReport() {
+      const c = currentCase;
+      const now = new Date();
+      const monthLabel = now.getFullYear() + '年' + (now.getMonth()+1) + '月';
+      const latestSat = c.satisfaction && c.satisfaction.length > 0 ? c.satisfaction[c.satisfaction.length-1] : null;
+      const totalTasks = (c.gantt || []).length;
+      const doneTasks = (c.gantt || []).filter(t => t.done).length;
+      const progress = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
+      const latestMin = c.minutes && c.minutes.length > 0 ? c.minutes[c.minutes.length-1] : null;
+      const nextActions = latestMin ? (latestMin.nextActions || []).filter(na => !na.done) : [];
+      openPrintDoc('月次レポート', `
+        <div class="header">
+          <div><div class="company">AllDelivered</div><div style="font-size:12px;color:#555;margin-top:4px;">月次レポート — ${monthLabel}</div></div>
+          <div class="doc-meta"><div style="font-size:16px;font-weight:700;">${c.clientName}</div><div>${c.name}</div><div>作成日: ${todayStr()}</div><div>担当: ${assigneeName(c.assignee)}</div></div>
+        </div>
+        <h2>進捗サマリー</h2>
+        <div class="grid3">
+          <div class="kpi-card"><div class="label">タスク進捗</div><div class="kpi-val">${progress}%</div><div style="font-size:11px;color:#777;">${doneTasks} / ${totalTasks} 完了</div></div>
+          <div class="kpi-card"><div class="label">顧客満足度</div><div class="kpi-val">${latestSat ? latestSat.total : '-'}<span style="font-size:12px;color:#777;">/100</span></div>${latestSat ? `<div class="sat-bar"><div class="sat-fill" style="width:${latestSat.total}%;background:${latestSat.total>=80?'#4caf50':latestSat.total>=60?'#ff9800':'#f44336'};"></div></div>` : ''}</div>
+          <div class="kpi-card"><div class="label">フェーズ</div><div class="kpi-val" style="font-size:16px;">${c.phase}</div></div>
+        </div>
+        <h2>KPI実績</h2>
+        ${(c.kpis || []).length > 0
+          ? `<table><thead><tr><th>指標</th><th>目標</th><th>実績</th><th>前回</th><th>達成率</th></tr></thead><tbody>${c.kpis.map(k=>{
+              const rate = k.target > 0 ? Math.round(k.actual/k.target*100) : 0;
+              return `<tr><td>${k.name}（${k.unit}）</td><td>${k.target}</td><td>${k.actual}</td><td>${k.prevActual||'-'}</td><td><span class="${rate>=100?'badge-ok':'badge-ng'}">${rate}%</span></td></tr>`;
+            }).join('')}</tbody></table>`
+          : '<p style="color:#999;font-size:12px;">KPIデータがありません</p>'
+        }
+        <h2>今月のROI</h2>
+        ${(c.roi || []).length > 0
+          ? `<table><thead><tr><th>施策</th><th>指標</th><th>改善前</th><th>改善後</th><th>ROI</th></tr></thead><tbody>${c.roi.map(r=>{
+              const {roi} = calcROI(r);
+              return `<tr><td>${r.measureName}</td><td>${r.metric}</td><td>${Number(r.beforeValue).toLocaleString()}</td><td>${Number(r.afterValue).toLocaleString()}</td><td style="font-weight:700;color:${roi>=0?'#1e7e34':'#c62828'}">${roi!==null?(roi>=0?'+':'')+roi.toFixed(1)+'%':'-'}</td></tr>`;
+            }).join('')}</tbody></table>`
+          : '<p style="color:#999;font-size:12px;">ROIデータがありません</p>'
+        }
+        <h2>直近の議事録・ネクストアクション</h2>
+        ${latestMin
+          ? `<div style="margin-bottom:8px;"><strong>${fmtDate(latestMin.date)}</strong> — ${latestMin.title}</div>
+             ${latestMin.body ? `<p style="font-size:12px;color:#555;margin-bottom:12px;">${latestMin.body.replace(/\n/g,'<br>')}</p>` : ''}
+             ${nextActions.length > 0
+               ? `<table><thead><tr><th>アクション</th><th>担当</th><th>期日</th></tr></thead><tbody>${nextActions.map(na=>`<tr><td>${na.text}</td><td>${assigneeName(na.assignee)}</td><td>${fmtDate(na.dueDate)}</td></tr>`).join('')}</tbody></table>`
+               : '<p style="font-size:12px;color:#777;">未完了アクションなし</p>'}`
+          : '<p style="color:#999;font-size:12px;">議事録がありません</p>'
+        }
+        <h2>来月に向けて</h2>
+        <div style="border:1px solid #ddd;border-radius:4px;padding:16px;min-height:60px;color:#999;font-size:12px;">（コメントを追記してください）</div>
+      `);
+    }
+
     renderAll();
   </script>
 </body>
