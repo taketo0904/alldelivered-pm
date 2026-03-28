@@ -74,46 +74,156 @@
     }
 
     // ===== GANTT =====
+    let ganttViewMode = 'month';
+    function setGanttView(mode) { ganttViewMode = mode; renderSections(); }
+
+    const DAY_NAMES = ['日','月','火','水','木','金','土'];
+
     function renderGanttSection() {
       const c = currentCase, tasks = c.gantt || [];
-      let ganttHtml = '';
-      if (tasks.length > 0) {
-        const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).concat([c.startDate, c.endDate]);
-        const minDate = allDates.reduce((a, b) => a < b ? a : b);
-        const maxDate = allDates.reduce((a, b) => a > b ? a : b);
-        const totalDays = daysBetween(minDate, maxDate) + 1;
-        const dayWidth = Math.max(8, Math.min(30, 800 / totalDays));
-        const timelineWidth = totalDays * dayWidth;
-        let headerCells = '';
-        let cur = new Date(minDate); const end = new Date(maxDate);
-        while (cur <= end) {
-          const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
-          const visEnd = mEnd < end ? mEnd : end;
-          const days = daysBetween(cur > new Date(minDate) ? cur : new Date(minDate), visEnd) + 1;
-          headerCells += `<div class="gantt-header-cell" style="width:${days * dayWidth}px">${cur.getFullYear()}/${cur.getMonth() + 1}</div>`;
-          cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+
+      const viewSwitcher = `<div class="gantt-view-switcher">
+        <button class="${ganttViewMode==='month'?'active':''}" onclick="setGanttView('month')">月</button>
+        <button class="${ganttViewMode==='week'?'active':''}" onclick="setGanttView('week')">週</button>
+        <button class="${ganttViewMode==='day'?'active':''}" onclick="setGanttView('day')">日</button>
+      </div>`;
+
+      const actionBar = `<div class="section-actions" style="display:flex;align-items:center;gap:10px;">
+        ${viewSwitcher}
+        ${canEdit ? '<button class="btn btn-sm" onclick="addGanttTask()">＋ タスク追加</button>' : ''}
+      </div>`;
+
+      if (tasks.length === 0) {
+        return `<div class="section"><div class="section-header"><h3>📊 ガントチャート</h3><span class="toggle-icon">▼</span></div><div class="section-body">${actionBar}<div class="empty-state">タスクがありません</div></div></div>`;
+      }
+
+      const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).concat([c.startDate, c.endDate]).filter(Boolean);
+      const dataMin = allDates.reduce((a,b) => a<b?a:b);
+      const dataMax = allDates.reduce((a,b) => a>b?a:b);
+
+      // Determine visible range and dayWidth per view mode
+      let minDate, maxDate, DAY_W;
+      if (ganttViewMode === 'month') {
+        minDate = dataMin; maxDate = dataMax;
+        const total = daysBetween(minDate, maxDate) + 1;
+        DAY_W = Math.max(6, Math.min(28, 780 / total));
+      } else if (ganttViewMode === 'week') {
+        minDate = getMondayOf(dataMin);
+        const lastSunday = dateAddDays(getMondayOf(dataMax), 6);
+        maxDate = lastSunday > dataMax ? dataMax : lastSunday;
+        maxDate = dataMax; // show full range
+        minDate = getMondayOf(dataMin);
+        DAY_W = 22;
+      } else { // day
+        minDate = dataMin; maxDate = dataMax;
+        DAY_W = 32;
+      }
+
+      const totalDays = daysBetween(minDate, maxDate) + 1;
+      const timelineW = totalDays * DAY_W;
+      const LABEL_W = 300;
+      const today = todayStr();
+      const todayOff = dayOffset(minDate, today);
+
+      // ---- Build header rows ----
+      let hRow1 = '', hRow2 = '';
+
+      if (ganttViewMode === 'month') {
+        let cur = new Date(minDate);
+        const endD = new Date(maxDate);
+        while (cur <= endD) {
+          const mEnd = new Date(cur.getFullYear(), cur.getMonth()+1, 0);
+          const visEnd = mEnd < endD ? mEnd : endD;
+          const visStartStr = cur.toISOString().slice(0,10);
+          const clampStart = visStartStr < minDate ? minDate : visStartStr;
+          const days = daysBetween(clampStart, visEnd.toISOString().slice(0,10)) + 1;
+          hRow1 += `<div class="gantt-header-cell" style="width:${days*DAY_W}px">${cur.getFullYear()}/${cur.getMonth()+1}</div>`;
+          cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
         }
-        const todayOff = dayOffset(minDate, todayStr()), todayLeft = todayOff * dayWidth;
-        ganttHtml = `<div class="gantt-wrapper"><div style="min-width:${timelineWidth + 300}px;">
-          <div style="display:flex;"><div style="min-width:300px;"></div><div class="gantt-header-row" style="width:${timelineWidth}px;">${headerCells}</div></div>
-          ${tasks.map(t => {
-            const off = dayOffset(minDate, t.startDate), dur = daysBetween(t.startDate, t.endDate) + 1;
-            return `<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;">
-              <div style="min-width:300px;padding:8px;display:flex;align-items:center;gap:8px;font-size:0.8rem;">
-                ${canEdit ? '<input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="toggleGanttDone(\'' + t.id + '\', this.checked)">' : (t.done ? '✓' : '○')}
-                ${priorityDot(t.priority)}
-                <span style="${t.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''}">${t.name}</span>
-                <span class="task-assignee">${assigneeName(t.assignee)}</span>
-                ${canEdit ? '<button class="btn-icon" style="width:24px;height:24px;font-size:0.7rem;" onclick="editGanttTask(\'' + t.id + '\')">✎</button><button class="btn-icon btn-danger" style="width:24px;height:24px;font-size:0.7rem;" onclick="deleteGanttTask(\'' + t.id + '\')">×</button>' : ''}
-              </div>
-              <div class="gantt-timeline" style="width:${timelineWidth}px;position:relative;">
-                <div class="gantt-bar priority-${t.priority} ${t.done ? 'done' : ''}" style="left:${off * dayWidth}px;width:${dur * dayWidth}px;"></div>
-                ${todayOff >= 0 && todayOff <= totalDays ? '<div class="gantt-today-line" style="left:' + todayLeft + 'px;"></div>' : ''}
-              </div></div>`;
-          }).join('')}</div></div>`;
-      } else { ganttHtml = '<div class="empty-state">タスクがありません</div>'; }
+      } else if (ganttViewMode === 'week') {
+        // Row1 = week ranges, Row2 = day names
+        const weekStart = getMondayOf(minDate);
+        let cur = new Date(weekStart);
+        const endD = new Date(maxDate);
+        while (cur <= endD) {
+          const sun = new Date(cur); sun.setDate(sun.getDate()+6);
+          const visS = cur < new Date(minDate) ? new Date(minDate) : cur;
+          const visE = sun > endD ? endD : sun;
+          const visSDStr = visS.toISOString().slice(0,10);
+          const visEDStr = visE.toISOString().slice(0,10);
+          const days = daysBetween(visSDStr, visEDStr) + 1;
+          hRow1 += `<div class="gantt-header-cell" style="width:${days*DAY_W}px;font-size:0.65rem;">${visS.getMonth()+1}/${visS.getDate()}〜${visE.getMonth()+1}/${visE.getDate()}</div>`;
+          for (let d = 0; d < 7; d++) {
+            const dd = new Date(cur); dd.setDate(dd.getDate()+d);
+            const dStr = dd.toISOString().slice(0,10);
+            if (dStr < minDate || dStr > maxDate) continue;
+            const isWE = dd.getDay()===0||dd.getDay()===6;
+            const isToday = dStr === today;
+            hRow2 += `<div class="gantt-header-cell gantt-day-cell${isWE?' gantt-we':''}${isToday?' gantt-today-col':''}" style="width:${DAY_W}px;">${DAY_NAMES[dd.getDay()]}</div>`;
+          }
+          cur.setDate(cur.getDate()+7);
+        }
+      } else { // day
+        let cur = new Date(minDate);
+        const endD = new Date(maxDate);
+        while (cur <= endD) {
+          const dStr = cur.toISOString().slice(0,10);
+          const isWE = cur.getDay()===0||cur.getDay()===6;
+          const isToday = dStr===today;
+          hRow1 += `<div class="gantt-header-cell gantt-day-cell${isWE?' gantt-we':''}${isToday?' gantt-today-col':''}" style="width:${DAY_W}px;font-size:0.62rem;">${cur.getMonth()+1}/${cur.getDate()}</div>`;
+          hRow2 += `<div class="gantt-header-cell gantt-day-cell${isWE?' gantt-we':''}${isToday?' gantt-today-col':''}" style="width:${DAY_W}px;">${DAY_NAMES[cur.getDay()]}</div>`;
+          cur.setDate(cur.getDate()+1);
+        }
+      }
+
+      // ---- Weekend stripe overlay ----
+      function weStripes() {
+        if (ganttViewMode === 'month') return '';
+        let s = '';
+        let cur = new Date(minDate);
+        const endD = new Date(maxDate);
+        while (cur <= endD) {
+          if (cur.getDay()===0||cur.getDay()===6) {
+            const off = dayOffset(minDate, cur.toISOString().slice(0,10));
+            s += `<div style="position:absolute;left:${off*DAY_W}px;top:0;width:${DAY_W}px;height:100%;background:rgba(255,255,255,0.025);pointer-events:none;"></div>`;
+          }
+          cur.setDate(cur.getDate()+1);
+        }
+        return s;
+      }
+
+      // ---- Task rows ----
+      const taskRows = tasks.map(t => {
+        const barOff = dayOffset(minDate, t.startDate);
+        const barDur = daysBetween(t.startDate, t.endDate) + 1;
+        const clampOff = Math.max(0, barOff);
+        const overflowLeft = Math.max(0, -barOff);
+        const clampDur = Math.max(0, Math.min(barDur - overflowLeft, totalDays - clampOff));
+        const dateLabel = ganttViewMode !== 'month' ? `<span style="font-size:0.7rem;color:var(--text-sub);margin-left:4px;">${fmtDate(t.startDate)}〜${fmtDate(t.endDate)}</span>` : '';
+        return `<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;min-height:36px;">
+          <div style="min-width:${LABEL_W}px;padding:6px 8px;display:flex;align-items:center;gap:6px;font-size:0.8rem;overflow:hidden;">
+            ${canEdit ? `<input type="checkbox" ${t.done?'checked':''} onchange="toggleGanttDone('${t.id}',this.checked)">` : (t.done?'✓':'○')}
+            ${priorityDot(t.priority)}
+            <span style="${t.done?'text-decoration:line-through;color:var(--text-sub)':''}white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.name}${dateLabel}</span>
+            <span class="task-assignee" style="flex-shrink:0;">${assigneeName(t.assignee)}</span>
+            ${canEdit ? `<button class="btn-icon" style="width:22px;height:22px;font-size:0.65rem;flex-shrink:0;" onclick="editGanttTask('${t.id}')">✎</button><button class="btn-icon btn-danger" style="width:22px;height:22px;font-size:0.65rem;flex-shrink:0;" onclick="deleteGanttTask('${t.id}')">×</button>` : ''}
+          </div>
+          <div class="gantt-timeline" style="width:${timelineW}px;height:36px;position:relative;flex-shrink:0;">
+            ${weStripes()}
+            ${clampDur > 0 ? `<div class="gantt-bar priority-${t.priority}${t.done?' done':''}" style="left:${clampOff*DAY_W}px;width:${clampDur*DAY_W}px;top:8px;height:20px;"></div>` : ''}
+            ${todayOff>=0&&todayOff<=totalDays ? `<div class="gantt-today-line" style="left:${todayOff*DAY_W}px;"></div>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+
+      const ganttHtml = `<div class="gantt-wrapper"><div style="min-width:${LABEL_W+timelineW}px;">
+        <div style="display:flex;"><div style="min-width:${LABEL_W}px;"></div><div class="gantt-header-row" style="width:${timelineW}px;">${hRow1}</div></div>
+        ${hRow2 ? `<div style="display:flex;"><div style="min-width:${LABEL_W}px;background:var(--surface);"></div><div class="gantt-header-row gantt-header-sub" style="width:${timelineW}px;">${hRow2}</div></div>` : ''}
+        ${taskRows}
+      </div></div>`;
+
       return `<div class="section"><div class="section-header"><h3>📊 ガントチャート</h3><span class="toggle-icon">▼</span></div><div class="section-body">
-        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addGanttTask()">＋ タスク追加</button></div>' : ''}${ganttHtml}</div></div>`;
+        ${actionBar}${ganttHtml}</div></div>`;
     }
 
     function toggleGanttDone(id, done) { const t = currentCase.gantt.find(x => x.id === id); if (t) { t.done = done; save(); reload(); } }

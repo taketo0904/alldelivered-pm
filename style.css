@@ -664,7 +664,24 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   text-align: center;
   border-left: 1px solid var(--border);
   padding: 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
+.gantt-header-sub .gantt-header-cell { font-size: 0.65rem; padding: 2px 0; }
+.gantt-day-cell { font-size: 0.65rem; }
+.gantt-we { background: rgba(255,255,255,0.04); color: var(--text-sub); }
+.gantt-today-col { background: rgba(201,185,154,0.18); color: var(--accent); font-weight: 600; }
+
+/* View Switcher */
+.gantt-view-switcher { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.gantt-view-switcher button {
+  background: none; border: none; color: var(--text-sub);
+  padding: 4px 12px; font-size: 0.8rem; cursor: pointer;
+  border-right: 1px solid var(--border); transition: background 0.15s, color 0.15s;
+}
+.gantt-view-switcher button:last-child { border-right: none; }
+.gantt-view-switcher button:hover { background: var(--surface-2); color: var(--text); }
+.gantt-view-switcher button.active { background: var(--accent); color: var(--bg); font-weight: 600; }
 
 /* --- Today Tasks --- */
 .today-tasks { list-style: none; }

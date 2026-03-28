@@ -276,6 +276,20 @@ function dayOffset(base, date) {
   return Math.ceil((d - b) / (1000 * 60 * 60 * 24));
 }
 
+function dateAddDays(dateStr, days) {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function getMondayOf(dateStr) {
+  const d = new Date(dateStr);
+  const dow = d.getDay(); // 0=Sun
+  const offset = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
 // --- Initial Data Setup ---
 function initDefaultData() {
   if (!getData('ad_users')) {
