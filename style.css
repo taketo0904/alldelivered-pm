@@ -961,6 +961,29 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 .reminder-upcoming { background: rgba(201,185,154,0.1); border: 1px solid rgba(201,185,154,0.35); border-radius: var(--radius); padding: 10px 14px; font-size: 0.85rem; color: var(--accent); }
 .timeline-row { cursor: pointer; transition: background 0.15s; }
 .timeline-row:hover { background: var(--surface-2); }
+
+/* --- Dashboard Tabs --- */
+.dash-tab-bar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+.dash-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-sub); font-size: 0.9rem; padding: 8px 16px;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+.dash-tab:hover { color: var(--text); }
+.dash-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* --- Pipeline Board --- */
+.pipeline-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.pipeline-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-height: 200px; }
+.pipeline-col-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.pipeline-cards { display: flex; flex-direction: column; gap: 10px; }
+.pipeline-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: border-color 0.2s, transform 0.15s; }
+.pipeline-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.pipeline-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
+.pipeline-prob-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.pipeline-prob-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+@media (max-width: 768px) { .pipeline-board { grid-template-columns: 1fr; } }
 /* --- Today Tasks --- */
 .today-tasks-list { display: flex; flex-direction: column; gap: 6px; }
 .today-task-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-radius: 6px; border: 1px solid var(--border); }

@@ -51,8 +51,22 @@
         </div>
       </div>
 
-      <h2 style="font-size:1rem;font-weight:500;margin-bottom:14px;">案件一覧</h2>
-      <div class="cases-grid" id="casesGrid"></div>
+      <!-- Tab Switcher -->
+      <div class="dash-tab-bar">
+        <button id="tabCases" class="dash-tab active" onclick="switchDashTab('cases')">📋 案件一覧</button>
+        <button id="tabPipeline" class="dash-tab" onclick="switchDashTab('pipeline')">🎯 提案パイプライン</button>
+      </div>
+
+      <!-- 案件一覧 -->
+      <div id="panelCases">
+        <div class="cases-grid" id="casesGrid"></div>
+      </div>
+
+      <!-- 提案パイプライン -->
+      <div id="panelPipeline" style="display:none;">
+        <div id="pipelineSummary" style="margin-bottom:16px;"></div>
+        <div class="pipeline-board" id="pipelineBoard"></div>
+      </div>
 
       <div class="revenue-section">
         <h3>収支サマリー</h3>
@@ -232,6 +246,17 @@
       renderDashboard();
     }
 
+    let dashTab = 'cases';
+
+    function switchDashTab(tab) {
+      dashTab = tab;
+      document.getElementById('tabCases').classList.toggle('active', tab === 'cases');
+      document.getElementById('tabPipeline').classList.toggle('active', tab === 'pipeline');
+      document.getElementById('panelCases').style.display = tab === 'cases' ? '' : 'none';
+      document.getElementById('panelPipeline').style.display = tab === 'pipeline' ? '' : 'none';
+      if (tab === 'pipeline') renderPipeline(getCases());
+    }
+
     function renderDashboard() {
       const cases = getCases();
       const filteredCases = session.role === 'partner'
@@ -241,10 +266,113 @@
       renderReminders(filteredCases);
       renderTimeline(cases);
       renderTodayTasks(filteredCases);
-      renderCaseCards(filteredCases);
+      renderCaseCards(filteredCases.filter(c => c.status !== 'proposal'));
+      if (dashTab === 'pipeline') renderPipeline(cases);
       renderBillingTable(cases);
       renderRevenueChart(cases);
       populateClientSelect();
+    }
+
+    // ===== PIPELINE =====
+    const PIPELINE_PHASES = ['提案中', '契約交渉', '契約済'];
+
+    function renderPipeline(allCases) {
+      const proposals = allCases.filter(c => c.status === 'proposal');
+
+      // Summary bar
+      const totalExpected = proposals.reduce((s, c) => {
+        const fee = (c.consultingFee || 0) + (c.monthlyFee || 0) * 3;
+        return s + fee * (c.probability || 50) / 100;
+      }, 0);
+      const totalFull = proposals.reduce((s, c) => s + (c.consultingFee || 0) + (c.monthlyFee || 0) * 3, 0);
+      document.getElementById('pipelineSummary').innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div class="summary-card" style="flex:1;min-width:140px;">
+            <div class="card-label">提案中案件数</div>
+            <div class="card-value">${proposals.length}<span style="font-size:0.85rem;color:var(--text-sub)"> 件</span></div>
+          </div>
+          <div class="summary-card" style="flex:1;min-width:140px;">
+            <div class="card-label">期待受注額（確度加味）</div>
+            <div class="card-value gold">¥${fmt(Math.round(totalExpected))}</div>
+          </div>
+          <div class="summary-card" style="flex:1;min-width:140px;">
+            <div class="card-label">最大受注額（全件受注時）</div>
+            <div class="card-value">¥${fmt(totalFull)}</div>
+          </div>
+        </div>`;
+
+      // Kanban board
+      const board = document.getElementById('pipelineBoard');
+      if (proposals.length === 0) {
+        board.innerHTML = '<div class="empty-state">提案中の案件がありません</div>';
+        return;
+      }
+      board.innerHTML = PIPELINE_PHASES.map(phase => {
+        const cards = proposals.filter(c => c.phase === phase);
+        const phaseTotal = cards.reduce((s, c) => s + (c.consultingFee || 0) + (c.monthlyFee || 0) * 3, 0);
+        return `<div class="pipeline-col">
+          <div class="pipeline-col-header">
+            <span>${phase}</span>
+            <span style="font-size:0.75rem;color:var(--text-sub);">${cards.length}件 / ¥${fmt(phaseTotal)}</span>
+          </div>
+          <div class="pipeline-cards">
+            ${cards.length === 0
+              ? '<div style="font-size:0.8rem;color:var(--text-sub);padding:8px 0;">案件なし</div>'
+              : cards.map(c => renderPipelineCard(c)).join('')}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderPipelineCard(c) {
+      const fee = (c.consultingFee || 0) + (c.monthlyFee || 0) * 3;
+      const expected = Math.round(fee * (c.probability || 50) / 100);
+      const overdue = isOverdue(c.nextFollowDate);
+      const probColor = c.probability >= 70 ? '#6dbf7e' : c.probability >= 40 ? 'var(--accent)' : 'var(--text-sub)';
+      return `<div class="pipeline-card" onclick="window.location.href='case.html?id=${c.id}'">
+        <div class="pipeline-card-top">
+          <div>
+            <div style="font-size:0.75rem;color:var(--text-sub);">${c.clientName}</div>
+            <div style="font-size:0.88rem;font-weight:600;margin-top:2px;">${c.name}</div>
+          </div>
+          <button class="btn-icon btn-danger" style="width:20px;height:20px;font-size:0.6rem;flex-shrink:0;"
+            onclick="event.stopPropagation();deleteCaseById('${c.id}','${c.name.replace(/'/g, '')}')">×</button>
+        </div>
+        <div class="pipeline-prob-row">
+          <div class="pipeline-prob-bar"><div style="width:${c.probability||50}%;height:100%;background:${probColor};border-radius:3px;transition:width 0.3s;"></div></div>
+          <span style="font-size:0.75rem;color:${probColor};font-weight:600;white-space:nowrap;">${c.probability||50}%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-top:8px;">
+          <span style="color:var(--text-sub);">期待値</span>
+          <span class="mono" style="color:var(--accent);">¥${fmt(expected)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-top:4px;align-items:center;">
+          <span class="follow-date ${overdue ? 'overdue' : ''}" style="font-size:0.72rem;">
+            次回: ${c.nextFollowDate ? fmtDate(c.nextFollowDate) : '-'}
+          </span>
+          <div style="display:flex;gap:4px;">
+            ${PIPELINE_PHASES.indexOf(c.phase) < PIPELINE_PHASES.length - 1
+              ? `<button class="btn btn-sm" style="padding:2px 6px;font-size:0.7rem;" onclick="event.stopPropagation();advancePhase('${c.id}')">→ 次フェーズ</button>`
+              : '<span style="color:#6dbf7e;font-size:0.72rem;">✓ 最終フェーズ</span>'}
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <span style="font-size:0.72rem;color:var(--text-sub);">担当: ${assigneeName(c.assignee)}</span>
+        </div>
+      </div>`;
+    }
+
+    function advancePhase(caseId) {
+      const cases = getCases();
+      const c = cases.find(x => x.id === caseId);
+      if (!c) return;
+      const idx = PIPELINE_PHASES.indexOf(c.phase);
+      if (idx < PIPELINE_PHASES.length - 1) {
+        c.phase = PIPELINE_PHASES[idx + 1];
+        saveCases(cases);
+        renderPipeline(getCases());
+        showToast(`フェーズを「${c.phase}」に更新しました`);
+      }
     }
 
     // ===== REMINDERS =====
