@@ -24,6 +24,7 @@
         <h1 class="page-title">ダッシュボード</h1>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary" onclick="openModal('addCaseModal')">＋ 案件追加</button>
+          <button class="btn-icon" onclick="manualSlackSync()" title="Slack同期">💬</button>
           <button class="btn-icon" onclick="openModal('settingsModal')" title="設定">⚙</button>
         </div>
       </div>
@@ -162,6 +163,7 @@
         <button class="active" onclick="showSettingsTab('users', this)">ユーザー管理</button>
         <button onclick="showSettingsTab('data', this)">データ管理</button>
         <button onclick="showSettingsTab('notify', this)">通知設定</button>
+        <button onclick="showSettingsTab('slack', this)">💬 Slack</button>
         <button onclick="showSettingsTab('gcal', this)">📅 Google Calendar</button>
       </div>
       <div id="settingsTabUsers">
@@ -188,6 +190,27 @@
           </div>
         </div>
       </div>
+      <div id="settingsTabSlack" style="display:none;">
+        <div style="font-size:0.85rem;color:var(--text-sub);margin-bottom:16px;line-height:1.7;">
+          Slackの任意のメッセージに 📌 リアクションをつけると、クライアント名を自動検出して該当プロジェクトのタスクに追加します。<br>
+          ダッシュボードを開くたびに自動同期されます。
+        </div>
+        <div class="form-group">
+          <label>Slack User Token（xoxp-...）</label>
+          <input type="password" id="slackTokenInput" placeholder="xoxp-..." style="font-size:0.8rem;">
+          <div style="font-size:0.75rem;color:var(--text-sub);margin-top:4px;">設定 → OAuth &amp; Permissions → User OAuth Token</div>
+        </div>
+        <div id="slackConnectStatus" style="margin-bottom:12px;font-size:0.85rem;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="saveSlackToken()">トークンを保存</button>
+          <button class="btn btn-sm" onclick="manualSlackSync()">🔄 今すぐ同期</button>
+          <button class="btn btn-sm" onclick="slackSetToken(''); updateSlackStatus(); showToast('トークンを削除しました');">削除</button>
+        </div>
+        <div style="margin-top:16px;font-size:0.8rem;color:var(--text-sub);">
+          💡 マッチング例：メッセージ内に「Tobeshinhome」と書いてあれば該当案件のタスクに自動追加
+        </div>
+      </div>
+
       <div id="settingsTabGcal" style="display:none;">
         <div style="font-size:0.85rem;color:var(--text-sub);margin-bottom:16px;line-height:1.7;">
           Google Cloud Console で OAuth 2.0 クライアントIDを取得し、以下に貼り付けてください。<br>
@@ -269,6 +292,8 @@
     if (session) {
       initSidebar(session, 'dashboard');
       renderDashboard();
+      // 起動時自動同期
+      setTimeout(autoSlackSync, 1500);
     }
 
     let dashTab = 'cases';
@@ -764,10 +789,52 @@
       document.getElementById('settingsTabUsers').style.display = tab === 'users' ? 'block' : 'none';
       document.getElementById('settingsTabData').style.display = tab === 'data' ? 'block' : 'none';
       document.getElementById('settingsTabNotify').style.display = tab === 'notify' ? 'block' : 'none';
+      document.getElementById('settingsTabSlack').style.display = tab === 'slack' ? 'block' : 'none';
       document.getElementById('settingsTabGcal').style.display = tab === 'gcal' ? 'block' : 'none';
       if (tab === 'users') renderUsersList();
       if (tab === 'notify') loadNotifySettings();
+      if (tab === 'slack') updateSlackStatus();
       if (tab === 'gcal') updateGcalStatus();
+    }
+
+    // ===== SLACK SYNC =====
+    function updateSlackStatus() {
+      const el = document.getElementById('slackConnectStatus');
+      const inp = document.getElementById('slackTokenInput');
+      if (!el) return;
+      const token = slackGetToken();
+      el.innerHTML = token
+        ? '<span style="color:#6dbf7e;">● トークン設定済み</span>'
+        : '<span style="color:var(--text-sub);">● 未設定</span>';
+      if (inp && !inp.value && token) inp.value = token;
+    }
+
+    function saveSlackToken() {
+      const val = document.getElementById('slackTokenInput').value.trim();
+      if (!val.startsWith('xoxp-')) { showToast('xoxp- で始まるUser Tokenを入力してください', 'error'); return; }
+      slackSetToken(val);
+      showToast('Slackトークンを保存しました');
+      updateSlackStatus();
+    }
+
+    async function manualSlackSync() {
+      if (!slackIsConnected()) { showToast('設定からSlackトークンを登録してください', 'error'); return; }
+      showToast('Slack同期中…');
+      try {
+        const count = await slackSyncTasks();
+        showToast(count > 0 ? count + '件のタスクを取り込みました' : '新しいタスクはありませんでした');
+        if (count > 0) renderDashboard();
+      } catch (e) {
+        showToast('Slack同期エラー: ' + e.message, 'error');
+      }
+    }
+
+    async function autoSlackSync() {
+      if (!slackIsConnected()) return;
+      try {
+        const count = await slackSyncTasks();
+        if (count > 0) { showToast(count + '件のSlackタスクを自動取り込みしました'); renderDashboard(); }
+      } catch (e) { /* サイレントに失敗 */ }
     }
 
     function saveGcalClientId() {

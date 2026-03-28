@@ -320,6 +320,73 @@ function getMondayOf(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
+// ===== Slack Integration =====
+function slackGetToken() { return getData('ad_slack_token') || ''; }
+function slackSetToken(t) { setData('ad_slack_token', t); }
+function slackIsConnected() { return !!slackGetToken(); }
+
+async function slackApi(method, params = {}) {
+  const token = slackGetToken();
+  if (!token) throw new Error('Slackトークンが未設定です');
+  const url = new URL('https://slack.com/api/' + method);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  const resp = await fetch(url.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data.error || 'Slack API error');
+  return data;
+}
+
+function slackStripMarkup(text) {
+  return (text || '')
+    .replace(/<@[A-Z0-9]+>/g, '')
+    .replace(/<#[A-Z0-9]+\|([^>]+)>/g, '#$1')
+    .replace(/<([^|>]+)\|([^>]+)>/g, '$2')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .trim();
+}
+
+async function slackSyncTasks() {
+  const data = await slackApi('reactions.list', { count: 200, full: true });
+  const items = (data.items || []).filter(i => i.type === 'message');
+  const cases = getCases().filter(c => c.status !== 'archived');
+  let imported = 0;
+
+  for (const item of items) {
+    const msg = item.message;
+    const hasPushpin = (msg.reactions || []).some(r => r.name === 'pushpin' && r.self);
+    if (!hasPushpin) continue;
+
+    const text = slackStripMarkup(msg.text);
+    if (!text) continue;
+
+    // Match to case by client/case name
+    const matched = cases.find(c =>
+      text.toLowerCase().includes(c.clientName.toLowerCase()) ||
+      text.toLowerCase().includes(c.name.toLowerCase())
+    );
+    if (!matched) continue;
+
+    if (!matched.gantt) matched.gantt = [];
+    if (matched.gantt.some(t => t.slackTs === msg.ts)) continue;
+
+    const taskName = text.length > 80 ? text.slice(0, 80) + '…' : text;
+    matched.gantt.push({
+      id: generateId('task'),
+      name: '💬 ' + taskName,
+      startDate: todayStr(),
+      endDate: todayStr(),
+      assignee: 'admin',
+      priority: 'medium',
+      done: false,
+      slackTs: msg.ts
+    });
+    updateCase(matched);
+    imported++;
+  }
+  return imported;
+}
+
 // ===== Google Calendar =====
 function gcalGetClientId() { return getData('ad_gcal_client_id') || ''; }
 function gcalSetClientId(id) { setData('ad_gcal_client_id', id); }
