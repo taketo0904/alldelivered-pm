@@ -6,6 +6,7 @@
   <title>ダッシュボード — AllDelivered PM</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
   <button class="hamburger" aria-label="メニュー">☰</button>
@@ -161,6 +162,7 @@
         <button class="active" onclick="showSettingsTab('users', this)">ユーザー管理</button>
         <button onclick="showSettingsTab('data', this)">データ管理</button>
         <button onclick="showSettingsTab('notify', this)">通知設定</button>
+        <button onclick="showSettingsTab('gcal', this)">📅 Google Calendar</button>
       </div>
       <div id="settingsTabUsers">
         <div id="usersList"></div>
@@ -186,6 +188,23 @@
           </div>
         </div>
       </div>
+      <div id="settingsTabGcal" style="display:none;">
+        <div style="font-size:0.85rem;color:var(--text-sub);margin-bottom:16px;line-height:1.7;">
+          Google Cloud Console で OAuth 2.0 クライアントIDを取得し、以下に貼り付けてください。<br>
+          承認済みJavaScriptオリジンに <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px;">https://taketo0904.github.io</code> を追加してください。
+        </div>
+        <div class="form-group">
+          <label>Google OAuth Client ID</label>
+          <input type="text" id="gcalClientId" placeholder="XXXXXXXXXX.apps.googleusercontent.com" style="font-size:0.8rem;">
+        </div>
+        <div id="gcalStatus" style="margin-bottom:12px;font-size:0.85rem;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="saveGcalClientId()">Client ID を保存</button>
+          <button class="btn btn-sm" onclick="gcalConnectFromSettings()">🔗 Googleに接続</button>
+          <button class="btn btn-sm" onclick="gcalDisconnect(); updateGcalStatus();">接続解除</button>
+        </div>
+      </div>
+
       <div id="settingsTabNotify" style="display:none;">
         <div class="form-group" style="margin-bottom:16px;">
           <label>Slack Incoming Webhook URL</label>
@@ -745,8 +764,32 @@
       document.getElementById('settingsTabUsers').style.display = tab === 'users' ? 'block' : 'none';
       document.getElementById('settingsTabData').style.display = tab === 'data' ? 'block' : 'none';
       document.getElementById('settingsTabNotify').style.display = tab === 'notify' ? 'block' : 'none';
+      document.getElementById('settingsTabGcal').style.display = tab === 'gcal' ? 'block' : 'none';
       if (tab === 'users') renderUsersList();
       if (tab === 'notify') loadNotifySettings();
+      if (tab === 'gcal') updateGcalStatus();
+    }
+
+    function saveGcalClientId() {
+      const id = document.getElementById('gcalClientId').value.trim();
+      if (!id) { showToast('Client IDを入力してください', 'error'); return; }
+      gcalSetClientId(id);
+      showToast('Client IDを保存しました');
+      updateGcalStatus();
+    }
+
+    function gcalConnectFromSettings() {
+      gcalConnect(() => updateGcalStatus());
+    }
+
+    function updateGcalStatus() {
+      const el = document.getElementById('gcalStatus');
+      if (!el) return;
+      el.innerHTML = gcalIsConnected()
+        ? '<span style="color:#6dbf7e;">● 接続済み（このタブを閉じるまで有効）</span>'
+        : '<span style="color:var(--text-sub);">● 未接続</span>';
+      const idEl = document.getElementById('gcalClientId');
+      if (idEl && !idEl.value) idEl.value = gcalGetClientId();
     }
 
     // ===== NOTIFY SETTINGS =====

@@ -6,6 +6,7 @@
   <title>案件詳細 — AllDelivered PM</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
   <button class="hamburger" aria-label="メニュー">☰</button>
@@ -427,7 +428,7 @@
           return `<li class="followup-item ${overdue ? 'overdue' : ''}">
             <span class="followup-date ${overdue ? 'overdue' : ''}">${fmtDate(f.date)} ${overdue ? '⚠' : ''}</span>
             <span style="flex:1;margin:0 12px;">${f.content}</span>${statusMap[f.status] || f.status}
-            ${canEdit ? '<button class="btn-icon" style="width:24px;height:24px;font-size:0.7rem;" onclick="editFollowup(\'' + f.id + '\')">✎</button><button class="btn-icon btn-danger" style="width:24px;height:24px;font-size:0.7rem;" onclick="deleteFollowup(\'' + f.id + '\')">×</button>' : ''}</li>`;
+            ${canEdit ? '<button class="btn-icon" title="Googleカレンダーに追加" style="width:24px;height:24px;font-size:0.75rem;" onclick="addFollowupToGcal(\'' + f.id + '\')">📅</button><button class="btn-icon" style="width:24px;height:24px;font-size:0.7rem;" onclick="editFollowup(\'' + f.id + '\')">✎</button><button class="btn-icon btn-danger" style="width:24px;height:24px;font-size:0.7rem;" onclick="deleteFollowup(\'' + f.id + '\')">×</button>' : ''}</li>`;
         }).join('') + '</ul>';
       return `<div class="section"><div class="section-header"><h3>📅 フォローアップ管理</h3><span class="toggle-icon">▼</span></div><div class="section-body">
         ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addFollowup()">＋ フォロー追加</button></div>' : ''}${html}</div></div>`;
@@ -437,9 +438,20 @@
         <div class="form-group"><label>予定日</label><input type="date" id="fuDate" required></div>
         <div class="form-group"><label>内容</label><input type="text" id="fuContent" required></div>
         <div class="form-group"><label>ステータス</label><select id="fuStatus"><option value="未対応">未対応</option><option value="対応済">対応済</option><option value="確認待ち">確認待ち</option></select></div>
+        <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="fuGcal"> 📅 Googleカレンダーにも追加</label></div>
         <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`);
     }
-    function submitFollowup(e) { e.preventDefault(); currentCase.followups.push({ id: generateId('fu'), date: document.getElementById('fuDate').value, content: document.getElementById('fuContent').value, status: document.getElementById('fuStatus').value }); save(); closeModal('genericModal'); reload(); showToast('追加しました'); }
+    function submitFollowup(e) {
+      e.preventDefault();
+      const fu = { id: generateId('fu'), date: document.getElementById('fuDate').value, content: document.getElementById('fuContent').value, status: document.getElementById('fuStatus').value };
+      const addToGcal = document.getElementById('fuGcal')?.checked;
+      currentCase.followups.push(fu); save(); closeModal('genericModal'); reload(); showToast('追加しました');
+      if (addToGcal) gcalCreateEvent('[AllDelivered] ' + currentCase.clientName + ' — ' + fu.content, '案件: ' + currentCase.name, fu.date);
+    }
+    function addFollowupToGcal(fuId) {
+      const f = currentCase.followups.find(x => x.id === fuId); if (!f) return;
+      gcalCreateEvent('[AllDelivered] ' + currentCase.clientName + ' — ' + f.content, '案件: ' + currentCase.name + '\n内容: ' + f.content, f.date);
+    }
     function editFollowup(fuId) {
       const f = currentCase.followups.find(x => x.id === fuId); if (!f) return;
       showGenericModal('フォローアップ編集', `<form onsubmit="submitEditFollowup(event, '${fuId}')">

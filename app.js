@@ -320,6 +320,57 @@ function getMondayOf(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
+// ===== Google Calendar =====
+function gcalGetClientId() { return getData('ad_gcal_client_id') || ''; }
+function gcalSetClientId(id) { setData('ad_gcal_client_id', id); }
+function gcalGetToken() { try { return sessionStorage.getItem('ad_gcal_token'); } catch { return null; } }
+function gcalSetToken(t) { try { sessionStorage.setItem('ad_gcal_token', t); } catch {} }
+function gcalClearToken() { try { sessionStorage.removeItem('ad_gcal_token'); } catch {} }
+function gcalIsConnected() { return !!gcalGetToken(); }
+
+let _gcalTokenClient = null;
+function gcalConnect(callback) {
+  const clientId = gcalGetClientId();
+  if (!clientId) { showToast('設定から Google Client ID を登録してください', 'error'); return; }
+  if (!window.google?.accounts) { showToast('Google API 読み込み中です。少し待って再試行してください', 'error'); return; }
+  _gcalTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/calendar.events',
+    callback: (resp) => {
+      if (resp.error) { showToast('Google Calendar 接続失敗: ' + resp.error, 'error'); return; }
+      gcalSetToken(resp.access_token);
+      showToast('Google Calendar に接続しました');
+      if (callback) callback();
+    }
+  });
+  _gcalTokenClient.requestAccessToken();
+}
+
+function gcalDisconnect() {
+  const token = gcalGetToken();
+  if (token && window.google?.accounts) google.accounts.oauth2.revoke(token, () => {});
+  gcalClearToken();
+  showToast('Google Calendar の接続を解除しました');
+}
+
+async function gcalCreateEvent(title, description, dateStr) {
+  const token = gcalGetToken();
+  if (!token) { gcalConnect(() => gcalCreateEvent(title, description, dateStr)); return; }
+  const resp = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary: title, description: description || '', start: { date: dateStr }, end: { date: dateStr } })
+  });
+  if (resp.ok) {
+    showToast('Googleカレンダーに追加しました');
+  } else if (resp.status === 401) {
+    gcalClearToken();
+    gcalConnect(() => gcalCreateEvent(title, description, dateStr));
+  } else {
+    showToast('カレンダーへの追加に失敗しました', 'error');
+  }
+}
+
 // --- Initial Data Setup ---
 function initDefaultData() {
   if (!getData('ad_users')) {
