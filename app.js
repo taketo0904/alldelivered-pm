@@ -181,7 +181,34 @@ function initSidebar(session, activePage) {
 
   let navHtml = '';
   if (isAdmin || isPartner) {
-    navHtml += '<a href="dashboard.html" class="' + (activePage === 'dashboard' ? 'active' : '') + '">📊 ダッシュボード</a>';
+    navHtml += '<a href="dashboard.html" class="sidebar-nav-item' + (activePage === 'dashboard' ? ' active' : '') + '">📊 ダッシュボード</a>';
+
+    // 案件ごとのリンク
+    const cases = getCases().filter(c => c.status !== 'archived');
+    const active = cases.filter(c => c.status === 'active');
+    const proposal = cases.filter(c => c.status === 'proposal');
+
+    if (active.length > 0) {
+      navHtml += '<div class="sidebar-section-label">進行中</div>';
+      active.forEach(c => {
+        const isCurrent = activePage === c.id;
+        navHtml += '<a href="case.html?id=' + c.id + '" class="sidebar-nav-item sidebar-case-item' + (isCurrent ? ' active' : '') + '" title="' + c.clientName + ' — ' + c.name + '">'
+          + '<span class="sidebar-case-dot active-dot"></span>'
+          + '<span class="sidebar-case-name">' + c.clientName + '</span>'
+          + '</a>';
+      });
+    }
+
+    if (proposal.length > 0) {
+      navHtml += '<div class="sidebar-section-label">提案中</div>';
+      proposal.forEach(c => {
+        const isCurrent = activePage === c.id;
+        navHtml += '<a href="case.html?id=' + c.id + '" class="sidebar-nav-item sidebar-case-item' + (isCurrent ? ' active' : '') + '" title="' + c.clientName + ' — ' + c.name + '">'
+          + '<span class="sidebar-case-dot proposal-dot"></span>'
+          + '<span class="sidebar-case-name">' + c.clientName + '</span>'
+          + '</a>';
+      });
+    }
   }
 
   sidebar.querySelector('.sidebar-nav').innerHTML = navHtml;

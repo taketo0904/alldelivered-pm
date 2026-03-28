@@ -205,6 +205,33 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   color: var(--text);
 }
 .sidebar-nav a.active { border-left: 2px solid var(--accent); }
+.sidebar-section-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-sub);
+  padding: 12px 12px 4px;
+  opacity: 0.7;
+}
+.sidebar-case-item {
+  padding: 6px 12px !important;
+  font-size: 0.8rem !important;
+}
+.sidebar-case-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-case-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.active-dot { background: var(--accent); }
+.proposal-dot { background: #6b9bd2; }
 .sidebar-user {
   padding: 16px 20px;
   border-top: 1px solid var(--border);

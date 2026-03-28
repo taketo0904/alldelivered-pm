@@ -32,7 +32,7 @@
   <script>
     const session = checkAuth(['admin', 'partner']);
     if (!session) throw new Error('No session');
-    initSidebar(session, '');
+    initSidebar(session, caseId);
     const params = new URLSearchParams(window.location.search);
     const caseId = params.get('id');
     if (!caseId) { window.location.href = 'dashboard.html'; throw new Error('No case id'); }
