@@ -199,8 +199,8 @@ function initSidebar(session, activePage) {
       });
     }
 
+    navHtml += '<div class="sidebar-section-label">提案中</div>';
     if (proposal.length > 0) {
-      navHtml += '<div class="sidebar-section-label">提案中</div>';
       proposal.forEach(c => {
         const isCurrent = activePage === c.id;
         navHtml += '<a href="case.html?id=' + c.id + '" class="sidebar-nav-item sidebar-case-item' + (isCurrent ? ' active' : '') + '" title="' + c.clientName + ' — ' + c.name + '">'
@@ -208,6 +208,8 @@ function initSidebar(session, activePage) {
           + '<span class="sidebar-case-name">' + c.clientName + '</span>'
           + '</a>';
       });
+    } else {
+      navHtml += '<div style="font-size:0.75rem;color:var(--text-sub);padding:4px 12px 8px;opacity:0.5;">なし</div>';
     }
   }
 
