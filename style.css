@@ -875,6 +875,11 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   transition: border-color 0.2s;
 }
 .resource-card:hover { border-color: var(--border-hover); }
+.resource-contract {
+  border-color: var(--accent) !important;
+  background: rgba(201,185,154,0.08);
+}
+.resource-contract:hover { border-color: var(--accent-hover) !important; }
 .resource-card .resource-type {
   font-size: 0.7rem;
   text-transform: uppercase;
