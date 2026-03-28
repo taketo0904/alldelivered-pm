@@ -66,6 +66,7 @@
           <span>期間: ${fmtDate(c.startDate)} 〜 ${fmtDate(c.endDate)}</span>
           ${c.consultingFee ? '<span>コンサル費: ¥' + fmt(c.consultingFee) + '</span>' : ''}
           ${c.monthlyFee ? '<span>顧問料: ¥' + fmt(c.monthlyFee) + '/月</span>' : ''}
+          ${c.hourlyRate ? '<span>時給: ¥' + fmt(c.hourlyRate) + '/h' + (c.hourlyEstHours ? ' ×' + c.hourlyEstHours + 'h/月' : '') + '</span>' : ''}
         </div>`;
     }
 

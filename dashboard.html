@@ -135,6 +135,10 @@
           <div class="form-group"><label>月次顧問料（¥/月）</label><input type="number" id="caseMonthly" value="0" min="0"></div>
         </div>
         <div class="form-row">
+          <div class="form-group"><label>時給（¥/時間）</label><input type="number" id="caseHourlyRate" value="0" min="0"></div>
+          <div class="form-group"><label>月間見込み時間</label><input type="number" id="caseHourlyEstHours" value="0" min="0" step="0.5"></div>
+        </div>
+        <div class="form-row">
           <div class="form-group">
             <label>担当者</label>
             <select id="caseAssignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option></select>
@@ -272,6 +276,10 @@
         <div class="form-row">
           <div class="form-group"><label>コンサルティング費（¥）</label><input type="number" id="editCaseFee" min="0"></div>
           <div class="form-group"><label>月次顧問料（¥/月）</label><input type="number" id="editCaseMonthly" min="0"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>時給（¥/時間）</label><input type="number" id="editCaseHourlyRate" min="0"></div>
+          <div class="form-group"><label>月間見込み時間</label><input type="number" id="editCaseHourlyEstHours" min="0" step="0.5"></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>担当者</label><select id="editCaseAssignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option></select></div>
@@ -643,6 +651,7 @@
         const feeDisplay = [];
         if (c.consultingFee) feeDisplay.push('コンサル費 ¥' + fmt(c.consultingFee));
         if (c.monthlyFee) feeDisplay.push('顧問料 ¥' + fmt(c.monthlyFee) + '/月');
+        if (c.hourlyRate) feeDisplay.push('時給 ¥' + fmt(c.hourlyRate) + '/h' + (c.hourlyEstHours ? ' ×' + c.hourlyEstHours + 'h' : ''));
         const overdue = isOverdue(c.nextFollowDate);
         const latestBilling = c.billing && c.billing.length > 0 ? c.billing[c.billing.length - 1] : null;
         return `
@@ -745,6 +754,8 @@
         startDate: document.getElementById('caseStartDate').value, endDate: document.getElementById('caseEndDate').value,
         consultingFee: parseInt(document.getElementById('caseFee').value) || 0,
         monthlyFee: parseInt(document.getElementById('caseMonthly').value) || 0,
+        hourlyRate: parseInt(document.getElementById('caseHourlyRate').value) || 0,
+        hourlyEstHours: parseFloat(document.getElementById('caseHourlyEstHours').value) || 0,
         assignee: document.getElementById('caseAssignee').value, nextFollowDate: '',
         billing: [], satisfaction: [], gantt: [], kpis: [], followups: [], minutes: [], resources: [],
         proposalUrl: '', contractUrl: ''
@@ -765,6 +776,8 @@
       c.endDate = document.getElementById('editCaseEndDate').value;
       c.consultingFee = parseInt(document.getElementById('editCaseFee').value) || 0;
       c.monthlyFee = parseInt(document.getElementById('editCaseMonthly').value) || 0;
+      c.hourlyRate = parseInt(document.getElementById('editCaseHourlyRate').value) || 0;
+      c.hourlyEstHours = parseFloat(document.getElementById('editCaseHourlyEstHours').value) || 0;
       c.assignee = document.getElementById('editCaseAssignee').value;
       c.nextFollowDate = document.getElementById('editCaseFollowDate').value;
       updateCase(c); closeModal('editCaseModal'); showToast('案件を更新しました'); renderDashboard();
