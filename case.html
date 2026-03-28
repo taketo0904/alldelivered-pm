@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>案件詳細 — AllDelivered PM</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+</head>
+<body>
+  <button class="hamburger" aria-label="メニュー">☰</button>
+  <div class="sidebar-overlay"></div>
+  <div class="app-layout">
+    <nav class="sidebar">
+      <div class="sidebar-logo">AllDelivered</div>
+      <div class="sidebar-nav"></div>
+      <div class="sidebar-user"></div>
+    </nav>
+    <main class="main-content">
+      <div class="page-header"><div><a href="dashboard.html" style="font-size:0.85rem;">← ダッシュボード</a></div></div>
+      <div class="case-header" id="caseHeader"></div>
+      <div id="sectionsContainer"></div>
+    </main>
+  </div>
+  <div class="modal-overlay" id="genericModal">
+    <div class="modal">
+      <div class="modal-header"><h2 id="genericModalTitle"></h2><button class="modal-close" onclick="closeModal('genericModal')">&times;</button></div>
+      <div id="genericModalBody"></div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+  <script>
+    const session = checkAuth(['admin', 'partner']);
+    if (!session) throw new Error('No session');
+    initSidebar(session, '');
+    const params = new URLSearchParams(window.location.search);
+    const caseId = params.get('id');
+    if (!caseId) { window.location.href = 'dashboard.html'; throw new Error('No case id'); }
+    let currentCase = getCaseById(caseId);
+    if (!currentCase) { window.location.href = 'dashboard.html'; throw new Error('Case not found'); }
+    const canEdit = session.role === 'admin' || session.role === 'partner';
+
+    function reload() { currentCase = getCaseById(caseId); renderAll(); }
+    function save() { updateCase(currentCase); }
+    function renderAll() { renderHeader(); renderSections(); initCollapsible(); }
+
+    function renderHeader() {
+      const c = currentCase;
+      document.getElementById('caseHeader').innerHTML = `
+        <div class="case-header-top">
+          <div><div class="case-client">${c.clientName}</div><div class="case-name">${c.name}</div></div>
+          <div style="display:flex;gap:8px;">${statusBadge(c.status)}${canEdit ? '<button class="btn btn-sm" onclick="editCaseInfo()">編集</button>' : ''}</div>
+        </div>
+        <div class="case-meta">
+          <span>フェーズ: ${c.phase}</span><span>担当: ${assigneeName(c.assignee)}</span>
+          <span>期間: ${fmtDate(c.startDate)} 〜 ${fmtDate(c.endDate)}</span>
+          ${c.consultingFee ? '<span>コンサル費: ¥' + fmt(c.consultingFee) + '</span>' : ''}
+          ${c.monthlyFee ? '<span>顧問料: ¥' + fmt(c.monthlyFee) + '/月</span>' : ''}
+        </div>`;
+    }
+
+    function renderSections() {
+      document.getElementById('sectionsContainer').innerHTML =
+        renderGanttSection() + renderTodaySection() + renderKPISection() +
+        renderFollowupSection() + renderSatisfactionSection() + renderMinutesSection() +
+        renderResourcesSection() + (canEdit ? renderBillingSection() : '');
+      renderSatChart();
+    }
+
+    // ===== GANTT =====
+    function renderGanttSection() {
+      const c = currentCase, tasks = c.gantt || [];
+      let ganttHtml = '';
+      if (tasks.length > 0) {
+        const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).concat([c.startDate, c.endDate]);
+        const minDate = allDates.reduce((a, b) => a < b ? a : b);
+        const maxDate = allDates.reduce((a, b) => a > b ? a : b);
+        const totalDays = daysBetween(minDate, maxDate) + 1;
+        const dayWidth = Math.max(8, Math.min(30, 800 / totalDays));
+        const timelineWidth = totalDays * dayWidth;
+        let headerCells = '';
+        let cur = new Date(minDate); const end = new Date(maxDate);
+        while (cur <= end) {
+          const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+          const visEnd = mEnd < end ? mEnd : end;
+          const days = daysBetween(cur > new Date(minDate) ? cur : new Date(minDate), visEnd) + 1;
+          headerCells += `<div class="gantt-header-cell" style="width:${days * dayWidth}px">${cur.getFullYear()}/${cur.getMonth() + 1}</div>`;
+          cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+        }
+        const todayOff = dayOffset(minDate, todayStr()), todayLeft = todayOff * dayWidth;
+        ganttHtml = `<div class="gantt-wrapper"><div style="min-width:${timelineWidth + 300}px;">
+          <div style="display:flex;"><div style="min-width:300px;"></div><div class="gantt-header-row" style="width:${timelineWidth}px;">${headerCells}</div></div>
+          ${tasks.map(t => {
+            const off = dayOffset(minDate, t.startDate), dur = daysBetween(t.startDate, t.endDate) + 1;
+            return `<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;">
+              <div style="min-width:300px;padding:8px;display:flex;align-items:center;gap:8px;font-size:0.8rem;">
+                ${canEdit ? '<input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="toggleGanttDone(\'' + t.id + '\', this.checked)">' : (t.done ? '✓' : '○')}
+                ${priorityDot(t.priority)}
+                <span style="${t.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''}">${t.name}</span>
+                <span class="task-assignee">${assigneeName(t.assignee)}</span>
+                ${canEdit ? '<button class="btn-icon" style="width:24px;height:24px;font-size:0.7rem;" onclick="editGanttTask(\'' + t.id + '\')">✎</button><button class="btn-icon btn-danger" style="width:24px;height:24px;font-size:0.7rem;" onclick="deleteGanttTask(\'' + t.id + '\')">×</button>' : ''}
+              </div>
+              <div class="gantt-timeline" style="width:${timelineWidth}px;position:relative;">
+                <div class="gantt-bar priority-${t.priority} ${t.done ? 'done' : ''}" style="left:${off * dayWidth}px;width:${dur * dayWidth}px;"></div>
+                ${todayOff >= 0 && todayOff <= totalDays ? '<div class="gantt-today-line" style="left:' + todayLeft + 'px;"></div>' : ''}
+              </div></div>`;
+          }).join('')}</div></div>`;
+      } else { ganttHtml = '<div class="empty-state">タスクがありません</div>'; }
+      return `<div class="section"><div class="section-header"><h3>📊 ガントチャート</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addGanttTask()">＋ タスク追加</button></div>' : ''}${ganttHtml}</div></div>`;
+    }
+
+    function toggleGanttDone(id, done) { const t = currentCase.gantt.find(x => x.id === id); if (t) { t.done = done; save(); reload(); } }
+
+    function addGanttTask() {
+      showGenericModal('タスク追加', `<form onsubmit="submitGanttTask(event)">
+        <div class="form-group"><label>タスク名</label><input type="text" id="gTaskName" required></div>
+        <div class="form-row"><div class="form-group"><label>開始日</label><input type="date" id="gTaskStart" required></div><div class="form-group"><label>終了日</label><input type="date" id="gTaskEnd" required></div></div>
+        <div class="form-row"><div class="form-group"><label>担当者</label><select id="gTaskAssignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option><option value="client">クライアント</option></select></div>
+        <div class="form-group"><label>優先度</label><select id="gTaskPriority"><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></div></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`);
+    }
+    function submitGanttTask(e) {
+      e.preventDefault();
+      currentCase.gantt.push({ id: generateId('task'), name: document.getElementById('gTaskName').value, startDate: document.getElementById('gTaskStart').value, endDate: document.getElementById('gTaskEnd').value, assignee: document.getElementById('gTaskAssignee').value, priority: document.getElementById('gTaskPriority').value, done: false });
+      save(); closeModal('genericModal'); reload(); showToast('タスクを追加しました');
+    }
+    function editGanttTask(taskId) {
+      const t = currentCase.gantt.find(x => x.id === taskId); if (!t) return;
+      showGenericModal('タスク編集', `<form onsubmit="submitEditGantt(event, '${taskId}')">
+        <div class="form-group"><label>タスク名</label><input type="text" id="gEditName" value="${t.name}" required></div>
+        <div class="form-row"><div class="form-group"><label>開始日</label><input type="date" id="gEditStart" value="${t.startDate}" required></div><div class="form-group"><label>終了日</label><input type="date" id="gEditEnd" value="${t.endDate}" required></div></div>
+        <div class="form-row"><div class="form-group"><label>担当者</label><select id="gEditAssignee"><option value="admin" ${t.assignee==='admin'?'selected':''}>Taketo</option><option value="kanchan" ${t.assignee==='kanchan'?'selected':''}>Kanchan</option><option value="client" ${t.assignee==='client'?'selected':''}>クライアント</option></select></div>
+        <div class="form-group"><label>優先度</label><select id="gEditPriority"><option value="high" ${t.priority==='high'?'selected':''}>高</option><option value="medium" ${t.priority==='medium'?'selected':''}>中</option><option value="low" ${t.priority==='low'?'selected':''}>低</option></select></div></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function submitEditGantt(e, taskId) {
+      e.preventDefault(); const t = currentCase.gantt.find(x => x.id === taskId); if (!t) return;
+      t.name = document.getElementById('gEditName').value; t.startDate = document.getElementById('gEditStart').value;
+      t.endDate = document.getElementById('gEditEnd').value; t.assignee = document.getElementById('gEditAssignee').value;
+      t.priority = document.getElementById('gEditPriority').value;
+      save(); closeModal('genericModal'); reload(); showToast('タスクを更新しました');
+    }
+    function deleteGanttTask(taskId) { if (!confirm('削除しますか？')) return; currentCase.gantt = currentCase.gantt.filter(t => t.id !== taskId); save(); reload(); showToast('削除しました'); }
+
+    // ===== TODAY =====
+    function renderTodaySection() {
+      const today = todayStr(); let tasks = [];
+      (currentCase.gantt || []).forEach(t => { if (t.endDate === today || t.startDate === today) tasks.push({ text: t.name, assignee: t.assignee, priority: t.priority, done: t.done, type: 'gantt', id: t.id }); });
+      (currentCase.minutes || []).forEach(m => { (m.nextActions || []).forEach((na, i) => { if (na.dueDate === today) tasks.push({ text: na.text, assignee: na.assignee, priority: 'medium', done: na.done, type: 'minute', minuteId: m.id, actionIdx: i }); }); });
+      (currentCase.followups || []).forEach(f => { if (f.date === today) tasks.push({ text: f.content, assignee: 'admin', priority: 'medium', done: f.status === '対応済', type: 'followup', id: f.id }); });
+      let html = tasks.length === 0 ? '<div class="empty-state">今日のタスクはありません</div>' :
+        '<ul class="today-tasks">' + tasks.map(t => `<li class="today-task-item">
+          ${canEdit ? '<input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="toggleTodayTask(\'' + t.type + '\', \'' + (t.id || '') + '\', ' + (t.actionIdx !== undefined ? t.actionIdx : -1) + ', \'' + (t.minuteId || '') + '\', this.checked)">' : (t.done ? '✓' : '○')}
+          ${priorityDot(t.priority)}<span style="${t.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''};flex:1;">${t.text}</span>
+          <span class="task-assignee">${assigneeName(t.assignee)}</span></li>`).join('') + '</ul>';
+      return `<div class="section"><div class="section-header"><h3>📌 今日のタスク</h3><span class="toggle-icon">▼</span></div><div class="section-body">${html}</div></div>`;
+    }
+    function toggleTodayTask(type, id, actionIdx, minuteId, done) {
+      if (type === 'gantt') { const t = currentCase.gantt.find(x => x.id === id); if (t) t.done = done; }
+      else if (type === 'minute') { const m = currentCase.minutes.find(x => x.id === minuteId); if (m && m.nextActions[actionIdx] !== undefined) m.nextActions[actionIdx].done = done; }
+      else if (type === 'followup') { const f = currentCase.followups.find(x => x.id === id); if (f) f.status = done ? '対応済' : '未対応'; }
+      save(); reload();
+    }
+
+    // ===== KPI =====
+    function renderKPISection() {
+      const kpis = currentCase.kpis || [];
+      let html = kpis.length === 0 ? '<div class="empty-state">KPIが設定されていません</div>' :
+        '<div class="kpi-grid">' + kpis.map(k => {
+          const pct = k.target ? Math.round((k.actual / k.target) * 100) : 0;
+          const diff = k.prevActual !== undefined ? k.actual - k.prevActual : null;
+          return `<div class="kpi-card">
+            <div class="kpi-name">${k.name}${canEdit ? ' <button class="btn-icon" style="width:20px;height:20px;font-size:0.65rem;" onclick="editKPI(\'' + k.id + '\')">✎</button> <button class="btn-icon btn-danger" style="width:20px;height:20px;font-size:0.65rem;" onclick="deleteKPI(\'' + k.id + '\')">×</button>' : ''}</div>
+            <div class="kpi-values"><span class="kpi-actual">${fmt(k.actual)}</span><span class="kpi-target">/ ${fmt(k.target)} ${k.unit}</span>
+            ${diff !== null ? '<span class="kpi-diff ' + (diff >= 0 ? 'up' : 'down') + '">' + (diff >= 0 ? '↑' : '↓') + Math.abs(diff) + '</span>' : ''}</div>
+            <div style="font-size:0.75rem;color:var(--text-sub);">達成率 ${pct}%</div>
+            <div class="kpi-progress"><div class="kpi-fill" style="width:${Math.min(pct, 100)}%;background:${pct >= 100 ? 'var(--success)' : 'var(--error)'}"></div></div></div>`;
+        }).join('') + '</div>';
+      return `<div class="section"><div class="section-header"><h3>📈 KPI・レポートトラッキング</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addKPI()">＋ KPI追加</button></div>' : ''}${html}</div></div>`;
+    }
+    function addKPI() {
+      showGenericModal('KPI追加', `<form onsubmit="submitKPI(event)">
+        <div class="form-group"><label>項目名</label><input type="text" id="kpiName" required></div>
+        <div class="form-row"><div class="form-group"><label>単位</label><input type="text" id="kpiUnit" required></div><div class="form-group"><label>目標値</label><input type="number" id="kpiTarget" required></div></div>
+        <div class="form-row"><div class="form-group"><label>実績値</label><input type="number" id="kpiActual" value="0"></div><div class="form-group"><label>前回実績</label><input type="number" id="kpiPrev" value="0"></div></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`);
+    }
+    function submitKPI(e) { e.preventDefault(); currentCase.kpis.push({ id: generateId('kpi'), name: document.getElementById('kpiName').value, unit: document.getElementById('kpiUnit').value, target: parseFloat(document.getElementById('kpiTarget').value), actual: parseFloat(document.getElementById('kpiActual').value), prevActual: parseFloat(document.getElementById('kpiPrev').value) }); save(); closeModal('genericModal'); reload(); showToast('KPIを追加しました'); }
+    function editKPI(kpiId) {
+      const k = currentCase.kpis.find(x => x.id === kpiId); if (!k) return;
+      showGenericModal('KPI編集', `<form onsubmit="submitEditKPI(event, '${kpiId}')">
+        <div class="form-group"><label>項目名</label><input type="text" id="kpiEditName" value="${k.name}" required></div>
+        <div class="form-row"><div class="form-group"><label>単位</label><input type="text" id="kpiEditUnit" value="${k.unit}" required></div><div class="form-group"><label>目標値</label><input type="number" id="kpiEditTarget" value="${k.target}" required></div></div>
+        <div class="form-row"><div class="form-group"><label>実績値</label><input type="number" id="kpiEditActual" value="${k.actual}"></div><div class="form-group"><label>前回実績</label><input type="number" id="kpiEditPrev" value="${k.prevActual || 0}"></div></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function submitEditKPI(e, kpiId) { e.preventDefault(); const k = currentCase.kpis.find(x => x.id === kpiId); if (!k) return; k.name = document.getElementById('kpiEditName').value; k.unit = document.getElementById('kpiEditUnit').value; k.target = parseFloat(document.getElementById('kpiEditTarget').value); k.actual = parseFloat(document.getElementById('kpiEditActual').value); k.prevActual = parseFloat(document.getElementById('kpiEditPrev').value); save(); closeModal('genericModal'); reload(); showToast('KPIを更新しました'); }
+    function deleteKPI(kpiId) { if (!confirm('削除しますか？')) return; currentCase.kpis = currentCase.kpis.filter(k => k.id !== kpiId); save(); reload(); showToast('削除しました'); }
+
+    // ===== FOLLOWUP =====
+    function renderFollowupSection() {
+      const fus = currentCase.followups || [];
+      const statusMap = { '未対応': '<span class="badge badge-billing-unpaid">未対応</span>', '対応済': '<span class="badge badge-billing-paid">対応済</span>', '確認待ち': '<span class="badge badge-billing-invoiced">確認待ち</span>' };
+      let html = fus.length === 0 ? '<div class="empty-state">フォローアップがありません</div>' :
+        '<ul class="followup-list">' + fus.map(f => {
+          const overdue = isOverdue(f.date) && f.status === '未対応';
+          return `<li class="followup-item ${overdue ? 'overdue' : ''}">
+            <span class="followup-date ${overdue ? 'overdue' : ''}">${fmtDate(f.date)} ${overdue ? '⚠' : ''}</span>
+            <span style="flex:1;margin:0 12px;">${f.content}</span>${statusMap[f.status] || f.status}
+            ${canEdit ? '<button class="btn-icon" style="width:24px;height:24px;font-size:0.7rem;" onclick="editFollowup(\'' + f.id + '\')">✎</button><button class="btn-icon btn-danger" style="width:24px;height:24px;font-size:0.7rem;" onclick="deleteFollowup(\'' + f.id + '\')">×</button>' : ''}</li>`;
+        }).join('') + '</ul>';
+      return `<div class="section"><div class="section-header"><h3>📅 フォローアップ管理</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addFollowup()">＋ フォロー追加</button></div>' : ''}${html}</div></div>`;
+    }
+    function addFollowup() {
+      showGenericModal('フォローアップ追加', `<form onsubmit="submitFollowup(event)">
+        <div class="form-group"><label>予定日</label><input type="date" id="fuDate" required></div>
+        <div class="form-group"><label>内容</label><input type="text" id="fuContent" required></div>
+        <div class="form-group"><label>ステータス</label><select id="fuStatus"><option value="未対応">未対応</option><option value="対応済">対応済</option><option value="確認待ち">確認待ち</option></select></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`);
+    }
+    function submitFollowup(e) { e.preventDefault(); currentCase.followups.push({ id: generateId('fu'), date: document.getElementById('fuDate').value, content: document.getElementById('fuContent').value, status: document.getElementById('fuStatus').value }); save(); closeModal('genericModal'); reload(); showToast('追加しました'); }
+    function editFollowup(fuId) {
+      const f = currentCase.followups.find(x => x.id === fuId); if (!f) return;
+      showGenericModal('フォローアップ編集', `<form onsubmit="submitEditFollowup(event, '${fuId}')">
+        <div class="form-group"><label>予定日</label><input type="date" id="fuEditDate" value="${f.date}" required></div>
+        <div class="form-group"><label>内容</label><input type="text" id="fuEditContent" value="${f.content}" required></div>
+        <div class="form-group"><label>ステータス</label><select id="fuEditStatus"><option value="未対応" ${f.status==='未対応'?'selected':''}>未対応</option><option value="対応済" ${f.status==='対応済'?'selected':''}>対応済</option><option value="確認待ち" ${f.status==='確認待ち'?'selected':''}>確認待ち</option></select></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function submitEditFollowup(e, fuId) { e.preventDefault(); const f = currentCase.followups.find(x => x.id === fuId); if (!f) return; f.date = document.getElementById('fuEditDate').value; f.content = document.getElementById('fuEditContent').value; f.status = document.getElementById('fuEditStatus').value; save(); closeModal('genericModal'); reload(); showToast('更新しました'); }
+    function deleteFollowup(fuId) { if (!confirm('削除しますか？')) return; currentCase.followups = currentCase.followups.filter(f => f.id !== fuId); save(); reload(); showToast('削除しました'); }
+
+    // ===== SATISFACTION =====
+    function renderSatisfactionSection() {
+      const sats = currentCase.satisfaction || [], latest = sats.length > 0 ? sats[sats.length - 1] : null;
+      let scoreHtml = '';
+      if (latest) {
+        const s = latest.scores;
+        const items = [{ label: '対応速度', key: 'responseSpeed' }, { label: '提案品質', key: 'proposalQuality' }, { label: 'コミュニケーション', key: 'communication' }, { label: '成果', key: 'results' }, { label: '継続意欲', key: 'continuationWill' }];
+        scoreHtml = `<div class="sat-score-display"><div class="big-score" style="color:${satColor(latest.total)}">${latest.total}<span>/100</span></div><div style="color:var(--text-sub);font-size:0.8rem;">最終評価日: ${fmtDate(latest.date)}</div></div>
+          ${items.map(item => `<div class="sat-slider-group"><label>${item.label} <span class="sat-val">${s[item.key]}/20</span></label><div class="satisfaction-bar"><div class="bar-track"><div class="bar-fill" style="width:${(s[item.key] / 20) * 100}%;background:${satColor(s[item.key] * 5)}"></div></div></div></div>`).join('')}
+          ${latest.comment ? '<div style="margin-top:12px;font-size:0.85rem;color:var(--text-sub);">コメント: ' + latest.comment + '</div>' : ''}`;
+      } else { scoreHtml = '<div class="empty-state">まだ評価がありません</div>'; }
+      let historyHtml = sats.length > 1 ? '<h4 style="font-size:0.85rem;margin:16px 0 8px;">過去スコア履歴</h4><ul style="list-style:none;">' + sats.slice().reverse().slice(1).map(s => `<li style="padding:4px 0;font-size:0.8rem;color:var(--text-sub);border-bottom:1px solid var(--border);">${fmtDate(s.date)} — ${s.total}点 ${s.comment ? '(' + s.comment + ')' : ''}</li>`).join('') + '</ul>' : '';
+      return `<div class="section"><div class="section-header"><h3>⭐ 顧客満足度</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addSatisfaction()">＋ 新規評価</button></div>' : ''}
+        ${scoreHtml}${historyHtml}<div style="margin-top:16px;"><canvas id="satChart" height="150"></canvas></div></div></div>`;
+    }
+    function renderSatChart() {
+      const canvas = document.getElementById('satChart'); if (!canvas) return;
+      const sats = currentCase.satisfaction || []; if (sats.length < 2) return;
+      new Chart(canvas.getContext('2d'), { type: 'line', data: { labels: sats.map(s => fmtDate(s.date)), datasets: [{ label: '満足度', data: sats.map(s => s.total), borderColor: 'rgba(201,185,154,1)', backgroundColor: 'rgba(201,185,154,0.1)', fill: true, tension: 0.3 }] },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { color: '#8a8780' }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#8a8780' }, grid: { color: 'rgba(255,255,255,0.05)' } } } } });
+    }
+    function addSatisfaction() {
+      showGenericModal('顧客満足度評価', `<form onsubmit="submitSatisfaction(event)">
+        <div class="form-group"><label>評価日</label><input type="date" id="satDate" value="${todayStr()}" required></div>
+        <div class="sat-slider-group"><label>対応速度 <span class="sat-val" id="satV1">10</span>/20</label><input type="range" min="0" max="20" value="10" id="sat1" oninput="document.getElementById('satV1').textContent=this.value"></div>
+        <div class="sat-slider-group"><label>提案品質 <span class="sat-val" id="satV2">10</span>/20</label><input type="range" min="0" max="20" value="10" id="sat2" oninput="document.getElementById('satV2').textContent=this.value"></div>
+        <div class="sat-slider-group"><label>コミュニケーション <span class="sat-val" id="satV3">10</span>/20</label><input type="range" min="0" max="20" value="10" id="sat3" oninput="document.getElementById('satV3').textContent=this.value"></div>
+        <div class="sat-slider-group"><label>成果 <span class="sat-val" id="satV4">10</span>/20</label><input type="range" min="0" max="20" value="10" id="sat4" oninput="document.getElementById('satV4').textContent=this.value"></div>
+        <div class="sat-slider-group"><label>継続意欲 <span class="sat-val" id="satV5">10</span>/20</label><input type="range" min="0" max="20" value="10" id="sat5" oninput="document.getElementById('satV5').textContent=this.value"></div>
+        <div class="form-group"><label>コメント（任意）</label><textarea id="satComment"></textarea></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function submitSatisfaction(e) { e.preventDefault(); const scores = { responseSpeed: parseInt(document.getElementById('sat1').value), proposalQuality: parseInt(document.getElementById('sat2').value), communication: parseInt(document.getElementById('sat3').value), results: parseInt(document.getElementById('sat4').value), continuationWill: parseInt(document.getElementById('sat5').value) }; const total = Object.values(scores).reduce((a, b) => a + b, 0); currentCase.satisfaction.push({ id: generateId('sat'), date: document.getElementById('satDate').value, scores, total, comment: document.getElementById('satComment').value }); save(); closeModal('genericModal'); reload(); showToast('評価を保存しました'); }
+
+    // ===== MINUTES =====
+    function renderMinutesSection() {
+      const mins = currentCase.minutes || [];
+      let html = mins.length === 0 ? '<div class="empty-state">議事録がありません</div>' :
+        mins.slice().reverse().map((m, idx) => {
+          const collapsed = idx >= 3 ? 'minute-collapsed' : '';
+          return `<div class="minute-entry ${collapsed}" id="min_${m.id}">
+            <div class="minute-header" onclick="document.getElementById('min_${m.id}').classList.toggle('minute-collapsed')">
+              <div><span class="minute-date">${fmtDate(m.date)}</span><span class="minute-title" style="margin-left:12px;">${m.title}</span></div>
+              <div style="display:flex;gap:4px;">
+                ${canEdit ? '<button class="btn-icon" style="width:24px;height:24px;font-size:0.7rem;" onclick="event.stopPropagation();editMinute(\'' + m.id + '\')">✎</button><button class="btn-icon btn-danger" style="width:24px;height:24px;font-size:0.7rem;" onclick="event.stopPropagation();deleteMinute(\'' + m.id + '\')">×</button>' : ''}
+                <span style="color:var(--text-sub);font-size:0.8rem;">▼</span></div></div>
+            <div class="minute-body">${m.body}</div>
+            ${m.nextActions && m.nextActions.length > 0 ? '<ul class="next-actions"><li style="font-size:0.75rem;color:var(--text-sub);padding:4px 0;font-weight:500;">ネクストアクション</li>' + m.nextActions.map((na, i) => `<li class="next-action-item">${canEdit ? '<input type="checkbox" ' + (na.done ? 'checked' : '') + ' onchange="toggleNA(\'' + m.id + '\', ' + i + ', this.checked)">' : (na.done ? '✓' : '○')}<span style="${na.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''};flex:1;">${na.text}</span><span class="task-assignee">${assigneeName(na.assignee)}</span><span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-sub);">${fmtDate(na.dueDate)}</span></li>`).join('') + '</ul>' : ''}
+          </div>`;
+        }).join('');
+      return `<div class="section"><div class="section-header"><h3>📝 議事録</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addMinute()">＋ 議事録追加</button></div>' : ''}${html}</div></div>`;
+    }
+    function toggleNA(minuteId, idx, done) { const m = currentCase.minutes.find(x => x.id === minuteId); if (m && m.nextActions[idx] !== undefined) { m.nextActions[idx].done = done; save(); reload(); } }
+    function addMinute() {
+      showGenericModal('議事録追加', `<form onsubmit="submitMinute(event)">
+        <div class="form-row"><div class="form-group"><label>日付</label><input type="date" id="minDate" value="${todayStr()}" required></div><div class="form-group"><label>タイトル</label><input type="text" id="minTitle" required></div></div>
+        <div class="form-group"><label>本文</label><textarea id="minBody" rows="4"></textarea></div>
+        <h4 style="font-size:0.85rem;margin:12px 0 8px;">ネクストアクション</h4><div id="naList"></div>
+        <button type="button" class="btn btn-sm" onclick="addNARow()" style="margin-bottom:12px;">＋ アクション追加</button>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function addNARow() { const list = document.getElementById('naList'); const row = document.createElement('div'); row.className = 'form-row'; row.style.marginBottom = '8px'; row.innerHTML = '<div class="form-group"><label>内容</label><input type="text" class="na-text" required></div><div class="form-group"><label>担当</label><select class="na-assignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option><option value="client">クライアント</option></select></div><div class="form-group"><label>期日</label><input type="date" class="na-due"></div>'; list.appendChild(row); }
+    function submitMinute(e) { e.preventDefault(); const nextActions = []; document.querySelectorAll('#naList .form-row').forEach(row => { const text = row.querySelector('.na-text').value; if (text) nextActions.push({ text, assignee: row.querySelector('.na-assignee').value, dueDate: row.querySelector('.na-due').value, done: false }); }); currentCase.minutes.push({ id: generateId('min'), date: document.getElementById('minDate').value, title: document.getElementById('minTitle').value, body: document.getElementById('minBody').value, nextActions }); save(); closeModal('genericModal'); reload(); showToast('議事録を追加しました'); }
+    function editMinute(minId) { const m = currentCase.minutes.find(x => x.id === minId); if (!m) return; showGenericModal('議事録編集', `<form onsubmit="submitEditMinute(event, '${minId}')"><div class="form-row"><div class="form-group"><label>日付</label><input type="date" id="minEditDate" value="${m.date}" required></div><div class="form-group"><label>タイトル</label><input type="text" id="minEditTitle" value="${m.title}" required></div></div><div class="form-group"><label>本文</label><textarea id="minEditBody" rows="4">${m.body}</textarea></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`); }
+    function submitEditMinute(e, minId) { e.preventDefault(); const m = currentCase.minutes.find(x => x.id === minId); if (!m) return; m.date = document.getElementById('minEditDate').value; m.title = document.getElementById('minEditTitle').value; m.body = document.getElementById('minEditBody').value; save(); closeModal('genericModal'); reload(); showToast('更新しました'); }
+    function deleteMinute(minId) { if (!confirm('削除しますか？')) return; currentCase.minutes = currentCase.minutes.filter(m => m.id !== minId); save(); reload(); showToast('削除しました'); }
+
+    // ===== RESOURCES =====
+    function renderResourcesSection() {
+      const res = currentCase.resources || [];
+      let html = res.length === 0 ? '<div class="empty-state">資料がありません</div>' :
+        '<div class="resources-grid">' + res.map(r => `<a href="${r.url}" target="_blank" class="resource-card" style="text-decoration:none;color:var(--text);"><div class="resource-type">${r.type}</div><div class="resource-title">${r.title}</div>${canEdit ? '<button class="btn-icon btn-danger" style="width:20px;height:20px;font-size:0.65rem;margin-top:8px;" onclick="event.preventDefault();deleteResource(\'' + r.id + '\')">×</button>' : ''}</a>`).join('') + '</div>';
+      return `<div class="section"><div class="section-header"><h3>📁 資料格納</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addResource()">＋ 資料追加</button></div>' : ''}${html}</div></div>`;
+    }
+    function addResource() { showGenericModal('資料追加', `<form onsubmit="submitResource(event)"><div class="form-group"><label>タイトル</label><input type="text" id="resTitle" required></div><div class="form-group"><label>URL</label><input type="url" id="resUrl" required></div><div class="form-group"><label>種別</label><select id="resType"><option>Sheet</option><option>Figma</option><option>Doc</option><option>PDF</option><option>Other</option></select></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`); }
+    function submitResource(e) { e.preventDefault(); currentCase.resources.push({ id: generateId('res'), title: document.getElementById('resTitle').value, url: document.getElementById('resUrl').value, type: document.getElementById('resType').value }); save(); closeModal('genericModal'); reload(); showToast('追加しました'); }
+    function deleteResource(resId) { if (!confirm('削除しますか？')) return; currentCase.resources = currentCase.resources.filter(r => r.id !== resId); save(); reload(); showToast('削除しました'); }
+
+    // ===== BILLING =====
+    function renderBillingSection() {
+      const c = currentCase, bills = c.billing || [];
+      let billRows = bills.map(b => `<tr><td class="mono">${b.month}</td><td class="mono">¥${fmt(b.consultingFee)}</td><td class="mono">¥${fmt(b.monthlyFee)}</td><td>${billingBadge(b.status)}</td><td class="mono">${b.paidDate || '-'}</td><td>${canEdit ? '<button class="btn-icon" style="width:20px;height:20px;font-size:0.65rem;" onclick="editBilling(\'' + b.id + '\')">✎</button> <button class="btn-icon btn-danger" style="width:20px;height:20px;font-size:0.65rem;" onclick="deleteBilling(\'' + b.id + '\')">×</button>' : ''}</td></tr>`).join('');
+      return `<div class="section"><div class="section-header"><h3>💰 提案・契約・収支情報</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px;">
+          <div><span style="color:var(--text-sub);font-size:0.8rem;">商談フェーズ</span><br>${c.phase}</div>
+          <div><span style="color:var(--text-sub);font-size:0.8rem;">受注確度</span><br><span class="mono">${c.probability}%</span></div>
+          <div><span style="color:var(--text-sub);font-size:0.8rem;">コンサル費</span><br><span class="mono" style="color:var(--accent)">¥${fmt(c.consultingFee)}</span></div>
+          <div><span style="color:var(--text-sub);font-size:0.8rem;">月次顧問料</span><br><span class="mono" style="color:var(--accent)">¥${fmt(c.monthlyFee)}/月</span></div></div>
+        <div style="display:flex;gap:12px;margin-bottom:12px;">${c.proposalUrl ? '<a href="' + c.proposalUrl + '" target="_blank" class="btn btn-sm">提案書</a>' : ''}${c.contractUrl ? '<a href="' + c.contractUrl + '" target="_blank" class="btn btn-sm">契約書</a>' : ''}${canEdit ? '<button class="btn btn-sm" onclick="editProposalContract()">URL設定</button>' : ''}</div>
+        <h4 style="font-size:0.85rem;margin:12px 0 8px;">請求一覧</h4>
+        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addBilling()">＋ 請求追加</button></div>' : ''}
+        <div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>月</th><th>コンサル費</th><th>顧問料</th><th>ステータス</th><th>入金日</th><th></th></tr></thead><tbody>${billRows || '<tr><td colspan="6" class="empty-state">請求データなし</td></tr>'}</tbody></table></div></div></div>`;
+    }
+    function addBilling() { const now = new Date(); const defMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'); showGenericModal('請求追加', `<form onsubmit="submitBilling(event)"><div class="form-group"><label>月</label><input type="month" id="billMonth" value="${defMonth}" required></div><div class="form-row"><div class="form-group"><label>コンサル費</label><input type="number" id="billFee" value="${currentCase.consultingFee}" min="0"></div><div class="form-group"><label>顧問料</label><input type="number" id="billMonthly" value="${currentCase.monthlyFee}" min="0"></div></div><div class="form-row"><div class="form-group"><label>ステータス</label><select id="billStatus"><option value="未請求">未請求</option><option value="請求済">請求済</option><option value="入金済">入金済</option></select></div><div class="form-group"><label>入金日</label><input type="date" id="billPaid"></div></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">追加</button></div></form>`); }
+    function submitBilling(e) { e.preventDefault(); currentCase.billing.push({ id: generateId('bill'), month: document.getElementById('billMonth').value, consultingFee: parseInt(document.getElementById('billFee').value) || 0, monthlyFee: parseInt(document.getElementById('billMonthly').value) || 0, status: document.getElementById('billStatus').value, paidDate: document.getElementById('billPaid').value || null }); save(); closeModal('genericModal'); reload(); showToast('請求を追加しました'); }
+    function editBilling(billId) { const b = currentCase.billing.find(x => x.id === billId); if (!b) return; showGenericModal('請求編集', `<form onsubmit="submitEditBilling(event, '${billId}')"><div class="form-group"><label>月</label><input type="month" id="billEditMonth" value="${b.month}" required></div><div class="form-row"><div class="form-group"><label>コンサル費</label><input type="number" id="billEditFee" value="${b.consultingFee}" min="0"></div><div class="form-group"><label>顧問料</label><input type="number" id="billEditMonthly" value="${b.monthlyFee}" min="0"></div></div><div class="form-row"><div class="form-group"><label>ステータス</label><select id="billEditStatus"><option value="未請求" ${b.status==='未請求'?'selected':''}>未請求</option><option value="請求済" ${b.status==='請求済'?'selected':''}>請求済</option><option value="入金済" ${b.status==='入金済'?'selected':''}>入金済</option></select></div><div class="form-group"><label>入金日</label><input type="date" id="billEditPaid" value="${b.paidDate || ''}"></div></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`); }
+    function submitEditBilling(e, billId) { e.preventDefault(); const b = currentCase.billing.find(x => x.id === billId); if (!b) return; b.month = document.getElementById('billEditMonth').value; b.consultingFee = parseInt(document.getElementById('billEditFee').value) || 0; b.monthlyFee = parseInt(document.getElementById('billEditMonthly').value) || 0; b.status = document.getElementById('billEditStatus').value; b.paidDate = document.getElementById('billEditPaid').value || null; save(); closeModal('genericModal'); reload(); showToast('更新しました'); }
+    function deleteBilling(billId) { if (!confirm('削除しますか？')) return; currentCase.billing = currentCase.billing.filter(b => b.id !== billId); save(); reload(); showToast('削除しました'); }
+    function editProposalContract() { showGenericModal('提案書・契約書URL', `<form onsubmit="submitProposalContract(event)"><div class="form-group"><label>提案書URL</label><input type="url" id="propUrl" value="${currentCase.proposalUrl || ''}"></div><div class="form-group"><label>契約書URL</label><input type="url" id="contUrl" value="${currentCase.contractUrl || ''}"></div><div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`); }
+    function submitProposalContract(e) { e.preventDefault(); currentCase.proposalUrl = document.getElementById('propUrl').value; currentCase.contractUrl = document.getElementById('contUrl').value; save(); closeModal('genericModal'); reload(); showToast('保存しました'); }
+
+    // ===== EDIT CASE =====
+    function editCaseInfo() {
+      const c = currentCase;
+      showGenericModal('案件情報編集', `<form onsubmit="submitCaseInfo(event)">
+        <div class="form-group"><label>案件名</label><input type="text" id="ciName" value="${c.name}" required></div>
+        <div class="form-row"><div class="form-group"><label>ステータス</label><select id="ciStatus"><option value="active" ${c.status==='active'?'selected':''}>進行中</option><option value="proposal" ${c.status==='proposal'?'selected':''}>提案中</option><option value="hold" ${c.status==='hold'?'selected':''}>保留</option><option value="done" ${c.status==='done'?'selected':''}>完了</option></select></div>
+        <div class="form-group"><label>フェーズ</label><select id="ciPhase"><option ${c.phase==='提案中'?'selected':''}>提案中</option><option ${c.phase==='契約交渉'?'selected':''}>契約交渉</option><option ${c.phase==='契約済'?'selected':''}>契約済</option><option ${c.phase==='継続中'?'selected':''}>継続中</option><option ${c.phase==='終了'?'selected':''}>終了</option></select></div></div>
+        <div class="form-row"><div class="form-group"><label>開始日</label><input type="date" id="ciStart" value="${c.startDate}"></div><div class="form-group"><label>終了日</label><input type="date" id="ciEnd" value="${c.endDate}"></div></div>
+        <div class="form-row"><div class="form-group"><label>コンサル費</label><input type="number" id="ciFee" value="${c.consultingFee}" min="0"></div><div class="form-group"><label>顧問料/月</label><input type="number" id="ciMonthly" value="${c.monthlyFee}" min="0"></div></div>
+        <div class="form-row"><div class="form-group"><label>担当</label><select id="ciAssignee"><option value="admin" ${c.assignee==='admin'?'selected':''}>Taketo</option><option value="kanchan" ${c.assignee==='kanchan'?'selected':''}>Kanchan</option></select></div><div class="form-group"><label>次回フォロー</label><input type="date" id="ciFollow" value="${c.nextFollowDate || ''}"></div></div>
+        <div class="form-group"><label>受注確度: <span id="ciProbVal">${c.probability}</span>%</label><input type="range" min="0" max="100" value="${c.probability}" id="ciProb" oninput="document.getElementById('ciProbVal').textContent=this.value"></div>
+        <div class="form-actions"><button type="button" class="btn" onclick="closeModal('genericModal')">キャンセル</button><button type="submit" class="btn btn-primary">保存</button></div></form>`);
+    }
+    function submitCaseInfo(e) { e.preventDefault(); currentCase.name = document.getElementById('ciName').value; currentCase.status = document.getElementById('ciStatus').value; currentCase.phase = document.getElementById('ciPhase').value; currentCase.startDate = document.getElementById('ciStart').value; currentCase.endDate = document.getElementById('ciEnd').value; currentCase.consultingFee = parseInt(document.getElementById('ciFee').value) || 0; currentCase.monthlyFee = parseInt(document.getElementById('ciMonthly').value) || 0; currentCase.assignee = document.getElementById('ciAssignee').value; currentCase.nextFollowDate = document.getElementById('ciFollow').value; currentCase.probability = parseInt(document.getElementById('ciProb').value); save(); closeModal('genericModal'); reload(); showToast('更新しました'); }
+
+    function showGenericModal(title, bodyHtml) { document.getElementById('genericModalTitle').textContent = title; document.getElementById('genericModalBody').innerHTML = bodyHtml; openModal('genericModal'); }
+    renderAll();
+  </script>
+</body>
+</html>

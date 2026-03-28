@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>クライアントポータル — AllDelivered PM</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+</head>
+<body>
+  <button class="hamburger" aria-label="メニュー">☰</button>
+  <div class="sidebar-overlay"></div>
+  <div class="app-layout">
+    <nav class="sidebar">
+      <div class="sidebar-logo">AllDelivered</div>
+      <div class="sidebar-nav"><a href="portal.html" class="active">📋 マイポータル</a></div>
+      <div class="sidebar-user"></div>
+    </nav>
+    <main class="main-content">
+      <div class="portal-header">
+        <h1 style="font-size:1.2rem;font-weight:500;">クライアントポータル</h1>
+        <p style="color:var(--text-sub);font-size:0.85rem;margin-top:4px;" id="portalWelcome"></p>
+      </div>
+      <div class="portal-case-selector" id="caseSelector"></div>
+      <div class="portal-export-bar" id="exportBar"></div>
+      <div id="portalContent"></div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+  <script>
+    const session = checkAuth(['client']);
+    if (!session) throw new Error('No session');
+    const sidebarUser = document.querySelector('.sidebar-user');
+    sidebarUser.innerHTML = `<div class="user-name">${session.name}</div><div class="user-role">${session.role}</div><a href="#" class="logout-link" onclick="clearSession(); window.location.href='index.html'; return false;">ログアウト</a>`;
+    const hamburger = document.querySelector('.hamburger'), overlay = document.querySelector('.sidebar-overlay'), sidebar = document.querySelector('.sidebar');
+    if (hamburger) hamburger.addEventListener('click', () => { sidebar.classList.toggle('open'); overlay.classList.toggle('active'); });
+    if (overlay) overlay.addEventListener('click', () => { sidebar.classList.remove('open'); overlay.classList.remove('active'); });
+    document.getElementById('portalWelcome').textContent = `${session.name} 様のプロジェクト情報`;
+
+    const allCases = getCases().filter(c => c.clientId === session.clientId);
+    let selectedCaseId = allCases.length > 0 ? allCases[0].id : null;
+
+    function renderCaseSelector() {
+      const el = document.getElementById('caseSelector');
+      if (allCases.length <= 1) { el.innerHTML = ''; return; }
+      el.innerHTML = `<label style="font-size:0.85rem;color:var(--text-sub);margin-right:8px;">案件選択:</label>
+        <select id="caseSel" onchange="selectedCaseId=this.value;renderPortal();" style="min-width:200px;">
+        ${allCases.map(c => `<option value="${c.id}" ${c.id === selectedCaseId ? 'selected' : ''}>${c.name}</option>`).join('')}</select>`;
+    }
+
+    function renderExportBar() {
+      document.getElementById('exportBar').innerHTML = `
+        <button class="btn btn-sm" onclick="window.print()">📄 印刷/PDF保存</button>
+        <button class="btn btn-sm" onclick="exportResourcesCSV()">📁 資料リストCSV</button>
+        <button class="btn btn-sm" onclick="exportKPICSV()">📈 KPIレポートCSV</button>
+        <button class="btn btn-sm" onclick="exportMinutesCSV()">📝 議事録CSV</button>`;
+    }
+
+    function renderPortal() {
+      const c = allCases.find(x => x.id === selectedCaseId);
+      if (!c) { document.getElementById('portalContent').innerHTML = '<div class="empty-state">案件が見つかりません</div>'; return; }
+      renderExportBar();
+      let html = `<div class="case-header" style="margin-bottom:16px;"><div class="case-name">${c.name}</div><div class="case-meta" style="margin-top:8px;"><span>${statusBadge(c.status)}</span><span>期間: ${fmtDate(c.startDate)} 〜 ${fmtDate(c.endDate)}</span></div></div>`;
+      html += renderPortalGantt(c) + renderPortalTodayTasks(c) + renderPortalKPI(c) + renderPortalSatisfaction(c) + renderPortalMinutes(c) + renderPortalResources(c);
+      document.getElementById('portalContent').innerHTML = html;
+      initCollapsible();
+      renderPortalSatChart(c);
+    }
+
+    function renderPortalGantt(c) {
+      const tasks = c.gantt || [];
+      if (tasks.length === 0) return `<div class="section"><div class="section-header"><h3>📊 ガントチャート</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="empty-state">タスクがありません</div></div></div>`;
+      const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).concat([c.startDate, c.endDate]);
+      const minDate = allDates.reduce((a, b) => a < b ? a : b), maxDate = allDates.reduce((a, b) => a > b ? a : b);
+      const totalDays = daysBetween(minDate, maxDate) + 1, dayWidth = Math.max(8, Math.min(30, 800 / totalDays)), timelineWidth = totalDays * dayWidth;
+      let headerCells = '', cur = new Date(minDate); const end = new Date(maxDate);
+      while (cur <= end) { const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0); const visEnd = mEnd < end ? mEnd : end; const days = daysBetween(cur > new Date(minDate) ? cur : new Date(minDate), visEnd) + 1; headerCells += `<div class="gantt-header-cell" style="width:${days * dayWidth}px">${cur.getFullYear()}/${cur.getMonth() + 1}</div>`; cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
+      const todayOff = dayOffset(minDate, todayStr()), todayLeft = todayOff * dayWidth;
+      return `<div class="section"><div class="section-header"><h3>📊 ガントチャート</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="gantt-wrapper"><div style="min-width:${timelineWidth + 250}px;">
+        <div style="display:flex;"><div style="min-width:250px;"></div><div class="gantt-header-row" style="width:${timelineWidth}px;">${headerCells}</div></div>
+        ${tasks.map(t => { const off = dayOffset(minDate, t.startDate), dur = daysBetween(t.startDate, t.endDate) + 1; return `<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;"><div style="min-width:250px;padding:8px;display:flex;align-items:center;gap:8px;font-size:0.8rem;">${t.done ? '✓' : '○'} ${priorityDot(t.priority)} <span style="${t.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''}">${t.name}</span><span class="task-assignee">${assigneeName(t.assignee)}</span></div><div class="gantt-timeline" style="width:${timelineWidth}px;position:relative;"><div class="gantt-bar priority-${t.priority} ${t.done ? 'done' : ''}" style="left:${off * dayWidth}px;width:${dur * dayWidth}px;"></div>${todayOff >= 0 && todayOff <= totalDays ? '<div class="gantt-today-line" style="left:' + todayLeft + 'px;"></div>' : ''}</div></div>`; }).join('')}</div></div></div></div>`;
+    }
+
+    function renderPortalTodayTasks(c) {
+      const today = todayStr(); let tasks = [];
+      (c.gantt || []).forEach(t => { if ((t.endDate === today || t.startDate === today) && t.assignee === 'client') tasks.push({ text: t.name, priority: t.priority, done: t.done }); });
+      (c.minutes || []).forEach(m => { (m.nextActions || []).forEach(na => { if (na.dueDate === today && na.assignee === 'client') tasks.push({ text: na.text, priority: 'medium', done: na.done }); }); });
+      let html = tasks.length === 0 ? '<div class="empty-state">今日のタスクはありません</div>' : '<ul class="today-tasks">' + tasks.map(t => `<li class="today-task-item">${t.done ? '✓' : '○'} ${priorityDot(t.priority)} <span style="${t.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''};flex:1;">${t.text}</span></li>`).join('') + '</ul>';
+      return `<div class="section"><div class="section-header"><h3>📌 今日のタスク</h3><span class="toggle-icon">▼</span></div><div class="section-body">${html}</div></div>`;
+    }
+
+    function renderPortalKPI(c) {
+      const kpis = c.kpis || [];
+      if (kpis.length === 0) return `<div class="section"><div class="section-header"><h3>📈 KPI達成状況</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="empty-state">KPIが設定されていません</div></div></div>`;
+      return `<div class="section"><div class="section-header"><h3>📈 KPI達成状況</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="kpi-grid">${kpis.map(k => { const pct = k.target ? Math.round((k.actual / k.target) * 100) : 0; const diff = k.prevActual !== undefined ? k.actual - k.prevActual : null; return `<div class="kpi-card"><div class="kpi-name">${k.name}</div><div class="kpi-values"><span class="kpi-actual">${fmt(k.actual)}</span><span class="kpi-target">/ ${fmt(k.target)} ${k.unit}</span>${diff !== null ? '<span class="kpi-diff ' + (diff >= 0 ? 'up' : 'down') + '">' + (diff >= 0 ? '↑' : '↓') + Math.abs(diff) + '</span>' : ''}</div><div style="font-size:0.75rem;color:var(--text-sub);">達成率 ${pct}%</div><div class="kpi-progress"><div class="kpi-fill" style="width:${Math.min(pct, 100)}%;background:${pct >= 100 ? 'var(--success)' : 'var(--error)'}"></div></div></div>`; }).join('')}</div></div></div>`;
+    }
+
+    function renderPortalSatisfaction(c) {
+      const sats = c.satisfaction || [];
+      if (sats.length === 0) return `<div class="section"><div class="section-header"><h3>⭐ 顧客満足度</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="empty-state">まだ評価がありません</div></div></div>`;
+      const latest = sats[sats.length - 1], s = latest.scores;
+      const items = [{ label: '対応速度', key: 'responseSpeed' }, { label: '提案品質', key: 'proposalQuality' }, { label: 'コミュニケーション', key: 'communication' }, { label: '成果', key: 'results' }, { label: '継続意欲', key: 'continuationWill' }];
+      return `<div class="section"><div class="section-header"><h3>⭐ 顧客満足度</h3><span class="toggle-icon">▼</span></div><div class="section-body">
+        <div class="sat-score-display"><div class="big-score" style="color:${satColor(latest.total)}">${latest.total}<span>/100</span></div><div style="color:var(--text-sub);font-size:0.8rem;">最終評価日: ${fmtDate(latest.date)}</div></div>
+        ${items.map(item => `<div class="sat-slider-group"><label>${item.label} <span class="sat-val">${s[item.key]}/20</span></label><div class="satisfaction-bar"><div class="bar-track"><div class="bar-fill" style="width:${(s[item.key] / 20) * 100}%;background:${satColor(s[item.key] * 5)}"></div></div></div></div>`).join('')}
+        <div style="margin-top:16px;"><canvas id="portalSatChart" height="150"></canvas></div></div></div>`;
+    }
+
+    function renderPortalSatChart(c) {
+      const canvas = document.getElementById('portalSatChart'); if (!canvas) return;
+      const sats = c.satisfaction || []; if (sats.length < 2) return;
+      new Chart(canvas.getContext('2d'), { type: 'line', data: { labels: sats.map(s => fmtDate(s.date)), datasets: [{ label: '満足度', data: sats.map(s => s.total), borderColor: 'rgba(201,185,154,1)', backgroundColor: 'rgba(201,185,154,0.1)', fill: true, tension: 0.3 }] },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { color: '#8a8780' }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#8a8780' }, grid: { color: 'rgba(255,255,255,0.05)' } } } } });
+    }
+
+    function renderPortalMinutes(c) {
+      const mins = c.minutes || [];
+      if (mins.length === 0) return `<div class="section"><div class="section-header"><h3>📝 議事録</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="empty-state">議事録がありません</div></div></div>`;
+      return `<div class="section"><div class="section-header"><h3>📝 議事録</h3><span class="toggle-icon">▼</span></div><div class="section-body">${mins.slice().reverse().map((m, idx) => {
+        const collapsed = idx >= 3 ? 'minute-collapsed' : '';
+        return `<div class="minute-entry ${collapsed}" id="pmin_${m.id}"><div class="minute-header" onclick="document.getElementById('pmin_${m.id}').classList.toggle('minute-collapsed')"><div><span class="minute-date">${fmtDate(m.date)}</span><span class="minute-title" style="margin-left:12px;">${m.title}</span></div><span style="color:var(--text-sub);font-size:0.8rem;">▼</span></div><div class="minute-body">${m.body}</div>${m.nextActions && m.nextActions.length > 0 ? '<ul class="next-actions"><li style="font-size:0.75rem;color:var(--text-sub);padding:4px 0;font-weight:500;">ネクストアクション</li>' + m.nextActions.map(na => `<li class="next-action-item">${na.done ? '✓' : '○'}<span style="${na.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''};flex:1;">${na.text}</span><span class="task-assignee">${assigneeName(na.assignee)}</span><span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-sub);">${fmtDate(na.dueDate)}</span></li>`).join('') + '</ul>' : ''}</div>`;
+      }).join('')}</div></div>`;
+    }
+
+    function renderPortalResources(c) {
+      const res = c.resources || [];
+      if (res.length === 0) return `<div class="section"><div class="section-header"><h3>📁 資料</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="empty-state">資料がありません</div></div></div>`;
+      return `<div class="section"><div class="section-header"><h3>📁 資料</h3><span class="toggle-icon">▼</span></div><div class="section-body"><div class="resources-grid">${res.map(r => `<a href="${r.url}" target="_blank" class="resource-card" style="text-decoration:none;color:var(--text);"><div class="resource-type">${r.type}</div><div class="resource-title">${r.title}</div></a>`).join('')}</div></div></div>`;
+    }
+
+    function exportResourcesCSV() { const c = allCases.find(x => x.id === selectedCaseId); if (!c) return; exportCSV('resources_' + todayStr() + '.csv', ['タイトル', 'URL', '種別'], (c.resources || []).map(r => [r.title, r.url, r.type])); showToast('エクスポートしました'); }
+    function exportKPICSV() { const c = allCases.find(x => x.id === selectedCaseId); if (!c) return; exportCSV('kpi_' + todayStr() + '.csv', ['項目名', '単位', '目標', '実績', '前回実績', '達成率'], (c.kpis || []).map(k => [k.name, k.unit, k.target, k.actual, k.prevActual || '', k.target ? Math.round((k.actual / k.target) * 100) + '%' : '-'])); showToast('エクスポートしました'); }
+    function exportMinutesCSV() { const c = allCases.find(x => x.id === selectedCaseId); if (!c) return; exportCSV('minutes_' + todayStr() + '.csv', ['日付', 'タイトル', '本文', 'ネクストアクション'], (c.minutes || []).map(m => [m.date, m.title, m.body, (m.nextActions || []).map(na => na.text + '(' + assigneeName(na.assignee) + ' ' + na.dueDate + ')').join(' / ')])); showToast('エクスポートしました'); }
+
+    renderCaseSelector();
+    renderPortal();
+  </script>
+</body>
+</html>

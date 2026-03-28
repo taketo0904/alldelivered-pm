@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ダッシュボード — AllDelivered PM</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+</head>
+<body>
+  <button class="hamburger" aria-label="メニュー">☰</button>
+  <div class="sidebar-overlay"></div>
+
+  <div class="app-layout">
+    <nav class="sidebar">
+      <div class="sidebar-logo">AllDelivered</div>
+      <div class="sidebar-nav"></div>
+      <div class="sidebar-user"></div>
+    </nav>
+
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">ダッシュボード</h1>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="openModal('addCaseModal')">＋ 案件追加</button>
+          <button class="btn-icon" onclick="openModal('settingsModal')" title="設定">⚙</button>
+        </div>
+      </div>
+
+      <div class="summary-cards" id="summaryCards"></div>
+
+      <h2 style="font-size:1rem;font-weight:500;margin-bottom:14px;">案件一覧</h2>
+      <div class="cases-grid" id="casesGrid"></div>
+
+      <div class="revenue-section">
+        <h3>収支サマリー</h3>
+        <div class="chart-container">
+          <canvas id="revenueChart"></canvas>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-sm" onclick="exportBillingCSV()">CSV エクスポート</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="billingTable">
+            <thead>
+              <tr><th>案件名</th><th>クライアント</th><th>コンサル費</th><th>月次顧問料</th><th>ステータス</th><th>入金日</th></tr>
+            </thead>
+            <tbody id="billingBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add Case Modal -->
+  <div class="modal-overlay" id="addCaseModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>案件追加</h2>
+        <button class="modal-close" onclick="closeModal('addCaseModal')">&times;</button>
+      </div>
+      <form id="addCaseForm">
+        <div class="form-group">
+          <label>クライアント</label>
+          <select id="caseClient"><option value="">-- 選択 --</option></select>
+        </div>
+        <div class="form-group">
+          <label>新規クライアント名（上で選択しない場合）</label>
+          <input type="text" id="caseClientNew" placeholder="新規の場合のみ入力">
+        </div>
+        <div class="form-group">
+          <label>案件名</label>
+          <input type="text" id="caseName" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>ステータス</label>
+            <select id="caseStatus"><option value="active">進行中</option><option value="proposal">提案中</option><option value="hold">保留</option><option value="done">完了</option></select>
+          </div>
+          <div class="form-group">
+            <label>商談フェーズ</label>
+            <select id="casePhase"><option value="提案中">提案中</option><option value="契約交渉">契約交渉</option><option value="契約済">契約済</option><option value="継続中">継続中</option><option value="終了">終了</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>開始日</label><input type="date" id="caseStartDate" required></div>
+          <div class="form-group"><label>終了予定日</label><input type="date" id="caseEndDate" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>コンサルティング費（¥）</label><input type="number" id="caseFee" value="0" min="0"></div>
+          <div class="form-group"><label>月次顧問料（¥/月）</label><input type="number" id="caseMonthly" value="0" min="0"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>担当者</label>
+            <select id="caseAssignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option></select>
+          </div>
+          <div class="form-group">
+            <label>受注確度: <span id="probVal">50</span>%</label>
+            <input type="range" id="caseProb" min="0" max="100" value="50" oninput="document.getElementById('probVal').textContent=this.value">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn" onclick="closeModal('addCaseModal')">キャンセル</button>
+          <button type="submit" class="btn btn-primary">追加</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal settings-modal" style="max-width:640px;">
+      <div class="modal-header">
+        <h2>管理者設定</h2>
+        <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+      </div>
+      <div class="tab-bar">
+        <button class="active" onclick="showSettingsTab('users', this)">ユーザー管理</button>
+        <button onclick="showSettingsTab('data', this)">データ管理</button>
+      </div>
+      <div id="settingsTabUsers">
+        <div id="usersList"></div>
+        <h4 style="margin:16px 0 8px;font-size:0.9rem;">新規ユーザー追加</h4>
+        <div class="form-row">
+          <div class="form-group"><label>ユーザーID</label><input type="text" id="newUserId"></div>
+          <div class="form-group"><label>表示名</label><input type="text" id="newUserName"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>パスワード</label><input type="text" id="newUserPw"></div>
+          <div class="form-group"><label>ロール</label><select id="newUserRole"><option value="client">Client</option><option value="partner">Partner</option><option value="admin">Admin</option></select></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addNewUser()">ユーザー追加</button>
+      </div>
+      <div id="settingsTabData" style="display:none;">
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <button class="btn" onclick="exportAllData(); showToast('バックアップをエクスポートしました');">JSON エクスポート（バックアップ）</button>
+          <div>
+            <label class="btn" style="cursor:pointer;">
+              JSON インポート（復元）
+              <input type="file" accept=".json" style="display:none;" onchange="handleImport(this)">
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Case Modal -->
+  <div class="modal-overlay" id="editCaseModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>案件編集</h2>
+        <button class="modal-close" onclick="closeModal('editCaseModal')">&times;</button>
+      </div>
+      <form id="editCaseForm">
+        <input type="hidden" id="editCaseId">
+        <div class="form-group"><label>案件名</label><input type="text" id="editCaseName" required></div>
+        <div class="form-row">
+          <div class="form-group"><label>ステータス</label><select id="editCaseStatus"><option value="active">進行中</option><option value="proposal">提案中</option><option value="hold">保留</option><option value="done">完了</option></select></div>
+          <div class="form-group"><label>商談フェーズ</label><select id="editCasePhase"><option value="提案中">提案中</option><option value="契約交渉">契約交渉</option><option value="契約済">契約済</option><option value="継続中">継続中</option><option value="終了">終了</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>開始日</label><input type="date" id="editCaseStartDate"></div>
+          <div class="form-group"><label>終了予定日</label><input type="date" id="editCaseEndDate"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>コンサルティング費（¥）</label><input type="number" id="editCaseFee" min="0"></div>
+          <div class="form-group"><label>月次顧問料（¥/月）</label><input type="number" id="editCaseMonthly" min="0"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>担当者</label><select id="editCaseAssignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option></select></div>
+          <div class="form-group"><label>次回フォロー日</label><input type="date" id="editCaseFollowDate"></div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-danger" onclick="deleteCase()">削除</button>
+          <button type="button" class="btn" onclick="closeModal('editCaseModal')">キャンセル</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    const session = checkAuth(['admin', 'partner']);
+    if (session) {
+      initSidebar(session, 'dashboard');
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      const cases = getCases();
+      const filteredCases = session.role === 'partner'
+        ? cases.filter(c => c.assignee === session.userId)
+        : cases;
+      renderSummary(cases);
+      renderCaseCards(filteredCases);
+      renderBillingTable(cases);
+      renderRevenueChart(cases);
+      populateClientSelect();
+    }
+
+    function renderSummary(cases) {
+      const activeCases = cases.filter(c => c.status === 'active').length;
+      const avgSat = getAvgSatisfaction(cases);
+      const weeklyFU = getWeeklyFollowups(cases);
+      let monthTotal = 0;
+      cases.forEach(c => { if (c.status === 'active') monthTotal += (c.monthlyFee || 0); });
+      const now = new Date();
+      const cm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      cases.forEach(c => { (c.billing || []).forEach(b => { if (b.month === cm) monthTotal += (b.consultingFee || 0); }); });
+      let unpaid = 0;
+      cases.forEach(c => { (c.billing || []).forEach(b => { if (b.status !== '入金済') { unpaid += (b.consultingFee || 0) + (b.monthlyFee || 0); } }); });
+
+      document.getElementById('summaryCards').innerHTML = `
+        <div class="summary-card"><div class="card-label">進行中案件</div><div class="card-value">${activeCases}</div><div class="card-sub">件</div></div>
+        <div class="summary-card"><div class="card-label">今月売上合計</div><div class="card-value gold">¥${fmt(monthTotal)}</div><div class="card-sub">コンサル費＋顧問料</div></div>
+        <div class="summary-card"><div class="card-label">未入金合計</div><div class="card-value" style="color:var(--error)">¥${fmt(unpaid)}</div><div class="card-sub">請求済・未請求分</div></div>
+        <div class="summary-card"><div class="card-label">平均顧客満足度</div><div class="card-value">${avgSat}<span style="font-size:0.9rem;color:var(--text-sub)">/100</span></div></div>
+        <div class="summary-card"><div class="card-label">今週のフォロー</div><div class="card-value">${weeklyFU}</div><div class="card-sub">件</div></div>
+      `;
+    }
+
+    function renderCaseCards(cases) {
+      const grid = document.getElementById('casesGrid');
+      if (cases.length === 0) { grid.innerHTML = '<div class="empty-state">案件がありません</div>'; return; }
+      grid.innerHTML = cases.map(c => {
+        const latestSat = c.satisfaction && c.satisfaction.length > 0 ? c.satisfaction[c.satisfaction.length - 1].total : null;
+        const feeDisplay = [];
+        if (c.consultingFee) feeDisplay.push('コンサル費 ¥' + fmt(c.consultingFee));
+        if (c.monthlyFee) feeDisplay.push('顧問料 ¥' + fmt(c.monthlyFee) + '/月');
+        const overdue = isOverdue(c.nextFollowDate);
+        const latestBilling = c.billing && c.billing.length > 0 ? c.billing[c.billing.length - 1] : null;
+        return `
+          <div class="case-card" onclick="window.location.href='case.html?id=${c.id}'">
+            <div class="case-card-header">
+              <div><div class="case-card-client">${c.clientName}</div><div class="case-card-name">${c.name}</div></div>
+              ${statusBadge(c.status)}
+            </div>
+            <div class="case-card-body">
+              <div class="case-card-row">
+                <span style="color:var(--text-sub);font-size:0.8rem;">フェーズ: ${c.phase}</span>
+                <span style="color:var(--text-sub);font-size:0.8rem;">担当: ${assigneeName(c.assignee)}</span>
+              </div>
+              ${feeDisplay.length ? '<div class="case-card-fee">' + feeDisplay.join(' + ') + '</div>' : ''}
+              ${latestSat !== null ? '<div class="satisfaction-bar"><div class="bar-track"><div class="bar-fill" style="width:' + latestSat + '%;background:' + satColor(latestSat) + '"></div></div><div class="bar-value" style="color:' + satColor(latestSat) + '">' + latestSat + '</div></div>' : ''}
+              ${latestBilling ? '<div>' + billingBadge(latestBilling.status) + '</div>' : ''}
+            </div>
+            <div class="case-card-footer">
+              <span class="follow-date ${overdue ? 'overdue' : ''}">次回: ${c.nextFollowDate ? fmtDate(c.nextFollowDate) : '-'} ${overdue ? '（期限切れ）' : ''}</span>
+              <span style="color:var(--accent);font-size:0.8rem;">詳細 →</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function renderBillingTable(cases) {
+      const tbody = document.getElementById('billingBody');
+      let rows = '';
+      cases.forEach(c => {
+        if (c.billing && c.billing.length > 0) {
+          c.billing.forEach(b => {
+            rows += `<tr><td>${c.name}</td><td>${c.clientName}</td><td class="mono">¥${fmt(b.consultingFee)}</td><td class="mono">¥${fmt(b.monthlyFee)}</td><td>${billingBadge(b.status)}</td><td class="mono">${b.paidDate || '-'}</td></tr>`;
+          });
+        } else {
+          rows += `<tr><td>${c.name}</td><td>${c.clientName}</td><td class="mono">¥${fmt(c.consultingFee)}</td><td class="mono">¥${fmt(c.monthlyFee)}</td><td><span class="badge badge-billing-unpaid">未請求</span></td><td>-</td></tr>`;
+        }
+      });
+      tbody.innerHTML = rows;
+    }
+
+    function renderRevenueChart(cases) {
+      const ctx = document.getElementById('revenueChart').getContext('2d');
+      const months = [], consultingData = [], monthlyData = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        months.push(key);
+        let cFee = 0, mFee = 0;
+        cases.forEach(c => {
+          if (c.status === 'active' || c.status === 'done') {
+            const start = new Date(c.startDate), end = new Date(c.endDate);
+            if (d >= new Date(start.getFullYear(), start.getMonth(), 1) && d <= end) mFee += (c.monthlyFee || 0);
+          }
+          (c.billing || []).forEach(b => { if (b.month === key) cFee += (b.consultingFee || 0); });
+        });
+        consultingData.push(cFee); monthlyData.push(mFee);
+      }
+      new Chart(ctx, {
+        type: 'bar',
+        data: { labels: months, datasets: [
+          { label: 'コンサル費', data: consultingData, backgroundColor: 'rgba(201,185,154,0.7)', borderColor: 'rgba(201,185,154,1)', borderWidth: 1 },
+          { label: '月次顧問料', data: monthlyData, backgroundColor: 'rgba(109,191,126,0.5)', borderColor: 'rgba(109,191,126,1)', borderWidth: 1 }
+        ]},
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#8a8780', font: { family: "'Noto Sans JP'" } } } },
+          scales: {
+            x: { stacked: true, ticks: { color: '#8a8780' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { stacked: true, ticks: { color: '#8a8780', callback: v => '¥' + Number(v).toLocaleString() }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        }
+      });
+    }
+
+    function populateClientSelect() {
+      const users = getUsers().filter(u => u.role === 'client');
+      const sel = document.getElementById('caseClient');
+      sel.innerHTML = '<option value="">-- 選択 --</option>';
+      users.forEach(u => { sel.innerHTML += `<option value="${u.clientId || u.id}">${u.name}</option>`; });
+    }
+
+    document.getElementById('addCaseForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const clientSel = document.getElementById('caseClient').value;
+      const clientNew = document.getElementById('caseClientNew').value.trim();
+      let clientId, clientName;
+      if (clientSel) {
+        const user = getUsers().find(u => (u.clientId || u.id) === clientSel);
+        clientId = clientSel; clientName = user ? user.name : clientSel;
+      } else if (clientNew) {
+        clientId = clientNew.toLowerCase().replace(/[^a-z0-9]/g, ''); clientName = clientNew;
+      } else { showToast('クライアントを選択または入力してください', 'error'); return; }
+      const newCase = {
+        id: generateId('case'), clientId, clientName, name: document.getElementById('caseName').value,
+        status: document.getElementById('caseStatus').value, phase: document.getElementById('casePhase').value,
+        probability: parseInt(document.getElementById('caseProb').value),
+        startDate: document.getElementById('caseStartDate').value, endDate: document.getElementById('caseEndDate').value,
+        consultingFee: parseInt(document.getElementById('caseFee').value) || 0,
+        monthlyFee: parseInt(document.getElementById('caseMonthly').value) || 0,
+        assignee: document.getElementById('caseAssignee').value, nextFollowDate: '',
+        billing: [], satisfaction: [], gantt: [], kpis: [], followups: [], minutes: [], resources: [],
+        proposalUrl: '', contractUrl: ''
+      };
+      const cases = getCases(); cases.push(newCase); saveCases(cases);
+      closeModal('addCaseModal'); showToast('案件を追加しました'); renderDashboard();
+      document.getElementById('addCaseForm').reset();
+    });
+
+    document.getElementById('editCaseForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const id = document.getElementById('editCaseId').value;
+      const c = getCaseById(id); if (!c) return;
+      c.name = document.getElementById('editCaseName').value;
+      c.status = document.getElementById('editCaseStatus').value;
+      c.phase = document.getElementById('editCasePhase').value;
+      c.startDate = document.getElementById('editCaseStartDate').value;
+      c.endDate = document.getElementById('editCaseEndDate').value;
+      c.consultingFee = parseInt(document.getElementById('editCaseFee').value) || 0;
+      c.monthlyFee = parseInt(document.getElementById('editCaseMonthly').value) || 0;
+      c.assignee = document.getElementById('editCaseAssignee').value;
+      c.nextFollowDate = document.getElementById('editCaseFollowDate').value;
+      updateCase(c); closeModal('editCaseModal'); showToast('案件を更新しました'); renderDashboard();
+    });
+
+    function deleteCase() {
+      const id = document.getElementById('editCaseId').value;
+      if (!confirm('この案件を削除しますか？')) return;
+      saveCases(getCases().filter(c => c.id !== id));
+      closeModal('editCaseModal'); showToast('案件を削除しました'); renderDashboard();
+    }
+
+    function showSettingsTab(tab, btn) {
+      document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('settingsTabUsers').style.display = tab === 'users' ? 'block' : 'none';
+      document.getElementById('settingsTabData').style.display = tab === 'data' ? 'block' : 'none';
+      if (tab === 'users') renderUsersList();
+    }
+
+    function renderUsersList() {
+      const users = getUsers();
+      document.getElementById('usersList').innerHTML = users.map(u => `
+        <div class="user-list-item">
+          <div><strong>${u.name}</strong><span style="color:var(--text-sub);font-size:0.8rem;margin-left:8px;">${u.role} / ${u.id}</span></div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input type="text" value="${u.password}" style="width:140px;font-size:0.8rem;" id="pw_${u.id}">
+            <button class="btn btn-sm" onclick="changePassword('${u.id}')">PW変更</button>
+            ${u.id !== 'admin' ? '<button class="btn btn-sm btn-danger" onclick="deleteUser(\'' + u.id + '\')">削除</button>' : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function changePassword(userId) {
+      const newPw = document.getElementById('pw_' + userId).value; if (!newPw) return;
+      const users = getUsers(); const user = users.find(u => u.id === userId);
+      if (user) { user.password = newPw; saveUsers(users); showToast('パスワードを変更しました'); }
+    }
+
+    function deleteUser(userId) {
+      if (!confirm('このユーザーを削除しますか？')) return;
+      saveUsers(getUsers().filter(u => u.id !== userId)); renderUsersList(); showToast('ユーザーを削除しました');
+    }
+
+    function addNewUser() {
+      const id = document.getElementById('newUserId').value.trim();
+      const name = document.getElementById('newUserName').value.trim();
+      const pw = document.getElementById('newUserPw').value;
+      const role = document.getElementById('newUserRole').value;
+      if (!id || !name || !pw) { showToast('全項目を入力してください', 'error'); return; }
+      const users = getUsers();
+      if (users.find(u => u.id === id)) { showToast('同じIDのユーザーが存在します', 'error'); return; }
+      const newUser = { id, role, name, password: pw };
+      if (role === 'client') newUser.clientId = id;
+      users.push(newUser); saveUsers(users); renderUsersList(); populateClientSelect();
+      document.getElementById('newUserId').value = ''; document.getElementById('newUserName').value = ''; document.getElementById('newUserPw').value = '';
+      showToast('ユーザーを追加しました');
+    }
+
+    function handleImport(input) {
+      const file = input.files[0]; if (!file) return;
+      importAllData(file).then(() => { showToast('データをインポートしました'); renderDashboard(); })
+        .catch(() => { showToast('インポートに失敗しました', 'error'); });
+    }
+
+    function exportBillingCSV() {
+      const cases = getCases();
+      const headers = ['案件名', 'クライアント', '月', 'コンサル費', '月次顧問料', 'ステータス', '入金日'];
+      const rows = [];
+      cases.forEach(c => { (c.billing || []).forEach(b => { rows.push([c.name, c.clientName, b.month, b.consultingFee, b.monthlyFee, b.status, b.paidDate || '']); }); });
+      exportCSV('billing_' + todayStr() + '.csv', headers, rows); showToast('CSVをエクスポートしました');
+    }
+
+    renderUsersList();
+  </script>
+</body>
+</html>

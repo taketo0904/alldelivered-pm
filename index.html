@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AllDelivered PM</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="login-logo">AllDelivered</div>
+    <div class="login-subtitle">Project Management System</div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label>User ID</label>
+        <input type="text" id="loginId" placeholder="ユーザーIDを入力" autocomplete="username" required>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="loginPw" placeholder="パスワードを入力" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">ログイン</button>
+    </form>
+    <div class="login-error" id="loginError">ユーザーIDまたはパスワードが正しくありません</div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    (function() {
+      const session = getSession();
+      if (session) {
+        if (session.role === 'client') {
+          window.location.href = 'portal.html';
+        } else {
+          window.location.href = 'dashboard.html';
+        }
+        return;
+      }
+    })();
+
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const id = document.getElementById('loginId').value.trim();
+      const pw = document.getElementById('loginPw').value;
+      const users = getUsers();
+      const user = users.find(u => u.id === id && u.password === pw);
+
+      if (!user) {
+        document.getElementById('loginError').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('loginError').style.display = 'none';
+      setSession({
+        userId: user.id,
+        role: user.role,
+        name: user.name,
+        clientId: user.clientId || null,
+        loginAt: new Date().toISOString()
+      });
+
+      if (user.role === 'client') {
+        window.location.href = 'portal.html';
+      } else {
+        window.location.href = 'dashboard.html';
+      }
+    });
+  </script>
+</body>
+</html>
