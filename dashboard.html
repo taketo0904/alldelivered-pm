@@ -148,6 +148,10 @@
             <input type="range" id="caseProb" min="0" max="100" value="50" oninput="document.getElementById('probVal').textContent=this.value">
           </div>
         </div>
+        <div class="form-group">
+          <label>Google Drive フォルダURL</label>
+          <input type="url" id="caseGdriveFolder" placeholder="https://drive.google.com/drive/folders/...">
+        </div>
         <div class="form-actions">
           <button type="button" class="btn" onclick="closeModal('addCaseModal')">キャンセル</button>
           <button type="submit" class="btn btn-primary">追加</button>
@@ -284,6 +288,10 @@
         <div class="form-row">
           <div class="form-group"><label>担当者</label><select id="editCaseAssignee"><option value="admin">Taketo</option><option value="kanchan">Kanchan</option></select></div>
           <div class="form-group"><label>次回フォロー日</label><input type="date" id="editCaseFollowDate"></div>
+        </div>
+        <div class="form-group">
+          <label>Google Drive フォルダURL</label>
+          <input type="url" id="editCaseGdriveFolder" placeholder="https://drive.google.com/drive/folders/...">
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-danger" onclick="deleteCase()">削除</button>
@@ -773,7 +781,8 @@
         hourlyEstHours: parseFloat(document.getElementById('caseHourlyEstHours').value) || 0,
         assignee: document.getElementById('caseAssignee').value, nextFollowDate: '',
         billing: [], satisfaction: [], gantt: [], kpis: [], followups: [], minutes: [], resources: [],
-        proposalUrl: '', contractUrl: ''
+        proposalUrl: '', contractUrl: '',
+        gdriveFolder: document.getElementById('caseGdriveFolder').value.trim()
       };
       const cases = getCases(); cases.push(newCase); saveCases(cases);
       closeModal('addCaseModal'); showToast('案件を追加しました'); renderDashboard();
@@ -795,6 +804,7 @@
       c.hourlyEstHours = parseFloat(document.getElementById('editCaseHourlyEstHours').value) || 0;
       c.assignee = document.getElementById('editCaseAssignee').value;
       c.nextFollowDate = document.getElementById('editCaseFollowDate').value;
+      c.gdriveFolder = document.getElementById('editCaseGdriveFolder').value.trim();
       updateCase(c); closeModal('editCaseModal'); showToast('案件を更新しました'); renderDashboard();
     });
 

@@ -68,6 +68,7 @@
           ${c.consultingFee ? '<span>コンサル費: ¥' + fmt(c.consultingFee) + '</span>' : ''}
           ${c.monthlyFee ? '<span>顧問料: ¥' + fmt(c.monthlyFee) + '/月</span>' : ''}
           ${c.hourlyRate ? '<span>時給: ¥' + fmt(c.hourlyRate) + '/h' + (c.hourlyEstHours ? ' ×' + c.hourlyEstHours + 'h/月' : '') + '</span>' : ''}
+          ${c.gdriveFolder ? '<a href="' + c.gdriveFolder + '" target="_blank" style="color:var(--accent);text-decoration:none;font-size:0.85rem;">☁️ Google Drive</a>' : ''}
         </div>`;
     }
 
@@ -516,8 +517,11 @@
             ${m.nextActions && m.nextActions.length > 0 ? '<ul class="next-actions"><li style="font-size:0.75rem;color:var(--text-sub);padding:4px 0;font-weight:500;">ネクストアクション</li>' + m.nextActions.map((na, i) => `<li class="next-action-item">${canEdit ? '<input type="checkbox" ' + (na.done ? 'checked' : '') + ' onchange="toggleNA(\'' + m.id + '\', ' + i + ', this.checked)">' : (na.done ? '✓' : '○')}<span style="${na.done ? 'text-decoration:line-through;color:var(--text-sub)' : ''};flex:1;">${na.text}</span><span class="task-assignee">${assigneeName(na.assignee)}</span><span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-sub);">${fmtDate(na.dueDate)}</span></li>`).join('') + '</ul>' : ''}
           </div>`;
         }).join('');
+      const gdriveLink = currentCase.gdriveFolder
+        ? '<a href="' + currentCase.gdriveFolder + '" target="_blank" class="btn btn-sm" style="text-decoration:none;gap:4px;">☁️ Google Drive フォルダ</a>'
+        : '';
       return `<div class="section"><div class="section-header"><h3>📝 議事録</h3><span class="toggle-icon">▼</span></div><div class="section-body">
-        ${canEdit ? '<div class="section-actions"><button class="btn btn-sm" onclick="addMinute()">＋ 議事録追加</button></div>' : ''}${html}</div></div>`;
+        ${canEdit ? '<div class="section-actions" style="display:flex;gap:8px;">' + gdriveLink + '<button class="btn btn-sm" onclick="addMinute()">＋ 議事録追加</button></div>' : ''}${html}</div></div>`;
     }
     function toggleNA(minuteId, idx, done) { const m = currentCase.minutes.find(x => x.id === minuteId); if (m && m.nextActions[idx] !== undefined) { m.nextActions[idx].done = done; save(); reload(); } }
     function addMinute() {
