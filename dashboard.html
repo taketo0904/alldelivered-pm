@@ -222,7 +222,9 @@
       <div id="settingsTabGcal" style="display:none;">
         <div style="font-size:0.85rem;color:var(--text-sub);margin-bottom:16px;line-height:1.7;">
           Google Cloud Console で OAuth 2.0 クライアントIDを取得し、以下に貼り付けてください。<br>
-          承認済みJavaScriptオリジンに <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px;">https://taketo0904.github.io</code> を追加してください。
+          <strong>Google Calendar API</strong> と <strong>Google Drive API</strong> を両方有効にしてください。<br>
+          承認済みJavaScriptオリジンに <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px;">https://taketo0904.github.io</code> を追加してください。<br>
+          <span style="font-size:0.75rem;">接続すると案件作成時にGドライブフォルダが自動作成されます。</span>
         </div>
         <div class="form-group">
           <label>Google OAuth Client ID</label>
@@ -787,6 +789,17 @@
       const cases = getCases(); cases.push(newCase); saveCases(cases);
       closeModal('addCaseModal'); showToast('案件を追加しました'); renderDashboard();
       document.getElementById('addCaseForm').reset();
+      // Google Drive フォルダ自動作成
+      if (!newCase.gdriveFolder && gcalIsConnected()) {
+        gdriveSetupCaseFolders(newCase.clientName, newCase.name).then(url => {
+          if (url) {
+            newCase.gdriveFolder = url;
+            updateCase(newCase);
+            showToast('Google Driveフォルダを作成しました');
+            renderDashboard();
+          }
+        });
+      }
     });
 
     document.getElementById('editCaseForm').addEventListener('submit', function(e) {

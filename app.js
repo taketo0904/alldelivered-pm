@@ -427,7 +427,7 @@ async function slackSyncMinutes() {
   return imported;
 }
 
-// ===== Google Calendar =====
+// ===== Google (Calendar + Drive) =====
 function gcalGetClientId() { return getData('ad_gcal_client_id') || ''; }
 function gcalSetClientId(id) { setData('ad_gcal_client_id', id); }
 function gcalGetToken() { try { return sessionStorage.getItem('ad_gcal_token'); } catch { return null; } }
@@ -442,15 +442,64 @@ function gcalConnect(callback) {
   if (!window.google?.accounts) { showToast('Google API 読み込み中です。少し待って再試行してください', 'error'); return; }
   _gcalTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: clientId,
-    scope: 'https://www.googleapis.com/auth/calendar.events',
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive',
     callback: (resp) => {
-      if (resp.error) { showToast('Google Calendar 接続失敗: ' + resp.error, 'error'); return; }
+      if (resp.error) { showToast('Google 接続失敗: ' + resp.error, 'error'); return; }
       gcalSetToken(resp.access_token);
-      showToast('Google Calendar に接続しました');
+      showToast('Google Calendar + Drive に接続しました');
       if (callback) callback();
     }
   });
   _gcalTokenClient.requestAccessToken();
+}
+
+// --- Google Drive Folder Creation ---
+async function gdriveCreateFolder(name, parentId) {
+  const token = gcalGetToken();
+  if (!token) { gcalConnect(() => gdriveCreateFolder(name, parentId)); return null; }
+  const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) body.parents = [parentId];
+  const resp = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (resp.ok) return await resp.json();
+  if (resp.status === 401) { gcalClearToken(); gcalConnect(() => gdriveCreateFolder(name, parentId)); return null; }
+  return null;
+}
+
+async function gdriveGetOrCreateRoot() {
+  const token = gcalGetToken();
+  if (!token) return null;
+  // Search for existing "AllDelivered PM" root folder
+  const q = encodeURIComponent("name='AllDelivered PM' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const resp = await fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (data.files && data.files.length > 0) return data.files[0].id;
+  const folder = await gdriveCreateFolder('AllDelivered PM');
+  return folder ? folder.id : null;
+}
+
+async function gdriveSetupCaseFolders(clientName, caseName) {
+  const rootId = await gdriveGetOrCreateRoot();
+  if (!rootId) { showToast('Driveフォルダ作成に失敗しました', 'error'); return null; }
+  // Create client folder
+  const clientFolder = await gdriveCreateFolder(clientName, rootId);
+  if (!clientFolder) return null;
+  // Create case folder inside client folder
+  const caseFolder = await gdriveCreateFolder(caseName, clientFolder.id);
+  if (!caseFolder) return null;
+  // Create sub-folders
+  await Promise.all([
+    gdriveCreateFolder('議事録', caseFolder.id),
+    gdriveCreateFolder('契約書', caseFolder.id),
+    gdriveCreateFolder('資料', caseFolder.id)
+  ]);
+  return 'https://drive.google.com/drive/folders/' + caseFolder.id;
 }
 
 function gcalDisconnect() {
