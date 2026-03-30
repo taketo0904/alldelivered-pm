@@ -593,12 +593,33 @@
       const weeklyFU = getWeeklyFollowups(cases);
       const now = new Date();
       const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      let monthTotal = 0;
-      cases.forEach(c => { if (isActiveInMonth(c, thisMonth)) monthTotal += calcMonthlyRevenue(c); });
       const cm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-      cases.forEach(c => { (c.billing || []).forEach(b => { if (b.month === cm) monthTotal += (b.consultingFee || 0); }); });
+      let monthTotal = 0;
+      cases.forEach(c => {
+        if (!isActiveInMonth(c, thisMonth)) return;
+        // ランニング収入（顧問料＋時給×時間）
+        monthTotal += calcMonthlyRevenue(c);
+        // コンサル費：請求レコードがあればその月のみ、なければ開始月に計上
+        const hasBilling = (c.billing || []).some(b => b.month === cm);
+        if (hasBilling) {
+          (c.billing || []).forEach(b => { if (b.month === cm) monthTotal += (b.consultingFee || 0); });
+        } else if (c.consultingFee) {
+          // 開始月が今月、または請求レコードが一件もなければ今月に計上
+          const startMonth = c.startDate ? c.startDate.slice(0, 7) : '';
+          if (startMonth === cm || (c.billing || []).length === 0) {
+            monthTotal += (c.consultingFee || 0);
+          }
+        }
+      });
       let unpaid = 0;
-      cases.forEach(c => { (c.billing || []).forEach(b => { if (b.status !== '入金済') { unpaid += (b.consultingFee || 0) + (b.monthlyFee || 0); } }); });
+      cases.forEach(c => {
+        if (c.status !== 'active' && c.status !== 'done') return;
+        const hasPaidBilling = (c.billing || []).some(b => b.status === '入金済');
+        if (!hasPaidBilling && (c.consultingFee || c.monthlyFee)) {
+          unpaid += (c.consultingFee || 0) + (c.monthlyFee || 0);
+        }
+        (c.billing || []).forEach(b => { if (b.status !== '入金済') { unpaid += (b.consultingFee || 0) + (b.monthlyFee || 0); } });
+      });
 
       document.getElementById('summaryCards').innerHTML = `
         <div class="summary-card"><div class="card-label">進行中案件</div><div class="card-value">${activeCases}</div><div class="card-sub">件</div></div>
@@ -718,7 +739,13 @@
         let cFee = 0, mFee = 0;
         cases.forEach(c => {
           if (isActiveInMonth(c, d)) mFee += calcMonthlyRevenue(c);
-          (c.billing || []).forEach(b => { if (b.month === key) cFee += (b.consultingFee || 0); });
+          const hasBilling = (c.billing || []).some(b => b.month === key);
+          if (hasBilling) {
+            (c.billing || []).forEach(b => { if (b.month === key) cFee += (b.consultingFee || 0); });
+          } else if (c.consultingFee && isActiveInMonth(c, d)) {
+            const startMonth = c.startDate ? c.startDate.slice(0, 7) : '';
+            if (startMonth === key || (c.billing || []).length === 0 && key === months[months.length - 1]) cFee += (c.consultingFee || 0);
+          }
         });
         consultingData.push(cFee); monthlyData.push(mFee);
       }
