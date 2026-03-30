@@ -601,11 +601,11 @@
       let unpaid = 0;
       cases.forEach(c => {
         if (c.status !== 'active' && c.status !== 'done') return;
-        const hasPaidBilling = (c.billing || []).some(b => b.status === '入金済');
-        if (!hasPaidBilling && (c.consultingFee || c.monthlyFee)) {
-          unpaid += (c.consultingFee || 0) + (c.monthlyFee || 0);
+        if ((c.billing || []).length > 0) {
+          (c.billing || []).forEach(b => { if (b.status !== '入金済') unpaid += (b.consultingFee || 0) + (b.monthlyFee || 0); });
+        } else {
+          unpaid += calcMonthlyRevenue(c);
         }
-        (c.billing || []).forEach(b => { if (b.status !== '入金済') { unpaid += (b.consultingFee || 0) + (b.monthlyFee || 0); } });
       });
 
       document.getElementById('summaryCards').innerHTML = `
