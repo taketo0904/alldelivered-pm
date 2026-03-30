@@ -576,13 +576,25 @@
       </div></div>`;
     }
 
+    function calcMonthlyRevenue(c) {
+      return (c.monthlyFee || 0) + (c.hourlyRate || 0) * (c.hourlyEstHours || 0);
+    }
+    function isActiveInMonth(c, monthDate) {
+      if (c.status !== 'active' && c.status !== 'done') return false;
+      const start = new Date(c.startDate);
+      if (monthDate < new Date(start.getFullYear(), start.getMonth(), 1)) return false;
+      if (c.endDate) { const end = new Date(c.endDate); if (monthDate > end) return false; }
+      return true;
+    }
+
     function renderSummary(cases) {
       const activeCases = cases.filter(c => c.status === 'active').length;
       const avgSat = getAvgSatisfaction(cases);
       const weeklyFU = getWeeklyFollowups(cases);
-      let monthTotal = 0;
-      cases.forEach(c => { if (c.status === 'active') monthTotal += (c.monthlyFee || 0); });
       const now = new Date();
+      const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      let monthTotal = 0;
+      cases.forEach(c => { if (isActiveInMonth(c, thisMonth)) monthTotal += calcMonthlyRevenue(c); });
       const cm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
       cases.forEach(c => { (c.billing || []).forEach(b => { if (b.month === cm) monthTotal += (b.consultingFee || 0); }); });
       let unpaid = 0;
@@ -590,7 +602,7 @@
 
       document.getElementById('summaryCards').innerHTML = `
         <div class="summary-card"><div class="card-label">進行中案件</div><div class="card-value">${activeCases}</div><div class="card-sub">件</div></div>
-        <div class="summary-card"><div class="card-label">今月売上合計</div><div class="card-value gold">¥${fmt(monthTotal)}</div><div class="card-sub">コンサル費＋顧問料</div></div>
+        <div class="summary-card"><div class="card-label">今月売上合計</div><div class="card-value gold">¥${fmt(monthTotal)}</div><div class="card-sub">顧問料＋時給＋コンサル費</div></div>
         <div class="summary-card"><div class="card-label">未入金合計</div><div class="card-value" style="color:var(--error)">¥${fmt(unpaid)}</div><div class="card-sub">請求済・未請求分</div></div>
         <div class="summary-card"><div class="card-label">平均顧客満足度</div><div class="card-value">${avgSat}<span style="font-size:0.9rem;color:var(--text-sub)">/100</span></div></div>
         <div class="summary-card"><div class="card-label">今週のフォロー</div><div class="card-value">${weeklyFU}</div><div class="card-sub">件</div></div>
@@ -705,10 +717,7 @@
         months.push(key);
         let cFee = 0, mFee = 0;
         cases.forEach(c => {
-          if (c.status === 'active' || c.status === 'done') {
-            const start = new Date(c.startDate), end = new Date(c.endDate);
-            if (d >= new Date(start.getFullYear(), start.getMonth(), 1) && d <= end) mFee += (c.monthlyFee || 0);
-          }
+          if (isActiveInMonth(c, d)) mFee += calcMonthlyRevenue(c);
           (c.billing || []).forEach(b => { if (b.month === key) cFee += (b.consultingFee || 0); });
         });
         consultingData.push(cFee); monthlyData.push(mFee);
@@ -716,8 +725,8 @@
       new Chart(ctx, {
         type: 'bar',
         data: { labels: months, datasets: [
-          { label: 'コンサル費', data: consultingData, backgroundColor: 'rgba(201,185,154,0.7)', borderColor: 'rgba(201,185,154,1)', borderWidth: 1 },
-          { label: '月次顧問料', data: monthlyData, backgroundColor: 'rgba(109,191,126,0.5)', borderColor: 'rgba(109,191,126,1)', borderWidth: 1 }
+          { label: 'コンサル費（単発）', data: consultingData, backgroundColor: 'rgba(201,185,154,0.7)', borderColor: 'rgba(201,185,154,1)', borderWidth: 1 },
+          { label: 'ランニング収入（顧問料＋時給）', data: monthlyData, backgroundColor: 'rgba(109,191,126,0.5)', borderColor: 'rgba(109,191,126,1)', borderWidth: 1 }
         ]},
         options: { responsive: true, maintainAspectRatio: false,
           plugins: { legend: { labels: { color: '#8a8780', font: { family: "'Noto Sans JP'" } } } },
