@@ -297,14 +297,14 @@
   <script src="app.js"></script>
   <script>
     const session = checkAuth(['admin', 'partner']);
+    let dashTab = 'cases';
+
     if (session) {
       initSidebar(session, 'dashboard');
       renderDashboard();
       // 起動時自動同期
       setTimeout(autoSlackSync, 1500);
     }
-
-    let dashTab = 'cases';
 
     function switchDashTab(tab) {
       dashTab = tab;
