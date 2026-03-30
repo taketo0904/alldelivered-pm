@@ -395,9 +395,23 @@ async function slackSyncMinutes() {
   let imported = 0;
 
   for (const msg of messages) {
-    const text = slackStripMarkup(msg.text);
+    // スレッド返信を取得してAI処理済み（📊 処理済み）を探す
+    let processedText = null;
+    let rawText = slackStripMarkup(msg.text);
+    if (msg.reply_count > 0) {
+      try {
+        const threadData = await slackApi('conversations.replies', { channel: channelId, ts: msg.ts, limit: 10 });
+        const replies = (threadData.messages || []).slice(1);
+        const processed = replies.find(r => (r.text || '').includes('処理済み'));
+        if (processed) processedText = slackStripMarkup(processed.text);
+      } catch(e) {}
+    }
+
+    // 処理済みテキストがあればそちらを優先、なければ元メッセージ
+    const text = processedText || rawText;
     if (!text || text.length < 20) continue;
 
+    // クライアント名でマッチング
     const matched = cases.find(c =>
       text.toLowerCase().includes(c.clientName.toLowerCase()) ||
       text.toLowerCase().includes(c.name.toLowerCase())
@@ -409,16 +423,47 @@ async function slackSyncMinutes() {
 
     const msgDate = new Date(parseFloat(msg.ts) * 1000);
     const dateStr = msgDate.toISOString().slice(0, 10);
-    const lines = text.split('\n').filter(l => l.trim());
-    const title = (lines[0] || '').length > 60 ? lines[0].slice(0, 60) + '…' : (lines[0] || '議事録');
-    const body = lines.slice(1).join('\n').trim() || text;
+
+    // 処理済みテキストからアクションアイテムを抽出
+    const nextActions = [];
+    if (processedText) {
+      const actionLines = processedText.split('\n').filter(l => l.match(/^\s*-\s*\[\s*\]\s*/));
+      actionLines.forEach(line => {
+        const clean = line.replace(/^\s*-\s*\[\s*\]\s*/, '').trim();
+        const parts = clean.split('|').map(p => p.trim());
+        const taskText = parts[0] || clean;
+        const assigneeMatch = clean.match(/担当[:：]\s*(\S+)/);
+        const dateMatch = clean.match(/期日[:：]\s*(\d{4}-\d{2}-\d{2})/);
+        nextActions.push({
+          text: taskText,
+          assignee: assigneeMatch ? assigneeMatch[1] : 'admin',
+          dueDate: dateMatch ? dateMatch[1] : '',
+          done: false
+        });
+      });
+    }
+
+    // サマリー部分を抽出
+    let title = '🎙️ 議事録';
+    let body = text;
+    if (processedText) {
+      const summaryMatch = processedText.match(/サマリー\n([\s\S]*?)(?=\n✅|\n💡|\n⚠|━)/);
+      body = summaryMatch ? summaryMatch[1].trim() : processedText;
+      const clientMatch = processedText.match(/クライアント[:：]\s*(.+)/);
+      const firstLine = rawText.split('\n').find(l => l.trim()) || '議事録';
+      title = '🎙️ ' + (firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine);
+    } else {
+      const lines = text.split('\n').filter(l => l.trim());
+      title = '🎙️ ' + ((lines[0] || '').length > 60 ? lines[0].slice(0, 60) + '…' : (lines[0] || '議事録'));
+      body = lines.slice(1).join('\n').trim() || text;
+    }
 
     matched.minutes.push({
       id: generateId('min'),
       date: dateStr,
-      title: '🎙️ ' + title,
-      body: body,
-      nextActions: [],
+      title,
+      body,
+      nextActions,
       slackTs: msg.ts
     });
     updateCase(matched);
